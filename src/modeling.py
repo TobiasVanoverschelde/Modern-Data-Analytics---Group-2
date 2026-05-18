@@ -7,17 +7,14 @@ from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.transformers import CyclicalEncoder
-
 RANDOM_STATE = 42
 
 NUMERIC_FEATURES = ["temperature_2m", "precipitation", "wind_speed_10m", "cloud_cover"]
-CYCLE_7 = ["day_of_week"]
-CYCLE_12 = ["month"]
+CYCLICAL_FEATURES = ["day_of_week_sin", "day_of_week_cos", "month_sin", "month_cos"]
 CATEGORICAL_FEATURES = ["gemeente", "covid_period"]
 BOOL_FEATURES = ["is_weekend", "is_holiday"]
 
-ALL_FEATURES = NUMERIC_FEATURES + CYCLE_7 + CYCLE_12 + CATEGORICAL_FEATURES + BOOL_FEATURES
+ALL_FEATURES = NUMERIC_FEATURES + CYCLICAL_FEATURES + CATEGORICAL_FEATURES + BOOL_FEATURES
 
 
 def time_aware_split(df, cutoff_date, time_col="date"):
@@ -37,10 +34,9 @@ def time_aware_split(df, cutoff_date, time_col="date"):
 def build_preprocessor():
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), NUMERIC_FEATURES),
-            ("cyc7", CyclicalEncoder(period=7), CYCLE_7),
-            ("cyc12", CyclicalEncoder(period=12), CYCLE_12),
-            ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_FEATURES),
+            ("num", StandardScaler(), NUMERIC_FEATURES + CYCLICAL_FEATURES),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+             CATEGORICAL_FEATURES),
             ("bool", "passthrough", BOOL_FEATURES),
         ],
         remainder="drop",

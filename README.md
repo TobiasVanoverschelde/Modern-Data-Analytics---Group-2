@@ -30,3 +30,4 @@ Vertex AI:
 
 ![alt text](extra-image-8.png)
 
+![alt text](extra\image-9.png)

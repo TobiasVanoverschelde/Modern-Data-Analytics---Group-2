@@ -84,9 +84,9 @@ def deploy_to_vertex(artifact_uri):
 
 
 if __name__ == "__main__":
-    #export_for_vertex()
-    #artifact_uri = upload_to_gcs()
-    artifact_uri = f"gs://{'mda-cycling-version-1'}/cycling-flanders/v1"
+    export_for_vertex()
+    artifact_uri = upload_to_gcs()
+    #artifact_uri = f"gs://{'mda-cycling-version-1'}/cycling-flanders/v1"
 
     endpoint = deploy_to_vertex(artifact_uri)
     

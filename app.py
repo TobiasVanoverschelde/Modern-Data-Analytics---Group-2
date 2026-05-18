@@ -6,12 +6,14 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from shiny import App, reactive, render, ui
+from src.features import add_cyclical_encoding
 
 # Load data and model
 PROCESSED_DIR = Path(__file__).parent / "data" / "processed"
 
 df_hourly = pd.read_parquet(PROCESSED_DIR / "cycling_features.parquet")
 df_daily = pd.read_parquet(PROCESSED_DIR / "daily_for_modeling.parquet")
+df_daily = add_cyclical_encoding(df_daily) 
 
 # Model — try MLflow first, otherwise fall back to joblib
 try:
@@ -243,13 +245,16 @@ def server(input, output, session):
     @reactive.Calc
     def scenario_input():
         day = int(input.scenario_day())
+        month = 6                        # neutral default
         return pd.DataFrame([{
             "temperature_2m": input.temp(),
             "precipitation": input.precip(),
             "wind_speed_10m": input.wind(),
             "cloud_cover": 50.0,         # neutral default
-            "day_of_week": day,
-            "month": 6,                  # neutral default
+            "day_of_week_sin": np.sin(2 * np.pi * day / 7),
+            "day_of_week_cos": np.cos(2 * np.pi * day / 7),
+            "month_sin": np.sin(2 * np.pi * month / 12),
+            "month_cos": np.cos(2 * np.pi * month / 12),
             "gemeente": input.scenario_gemeente(),
             "covid_period": "post_covid",
             "is_weekend": day >= 5,
