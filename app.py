@@ -13,16 +13,43 @@ PROCESSED_DIR = Path(__file__).parent / "data" / "processed"
 df_hourly = pd.read_parquet(PROCESSED_DIR / "cycling_features.parquet")
 df_daily = pd.read_parquet(PROCESSED_DIR / "daily_for_modeling.parquet")
 
-# Model — try MLflow first, otherwise back to joblib
+# Model — try MLflow first, otherwise fall back to joblib
 try:
     import mlflow
-    mlruns_path = (Path(__file__).parent / "notebooks\mlruns").resolve()
+    mlruns_path = (Path(__file__).parent / "notebooks" / "mlruns").resolve()
     mlflow.set_tracking_uri(mlruns_path.as_uri())
     model = mlflow.sklearn.load_model("models:/cycling-flanders/latest")
     print("Loaded model from MLflow registry")
 except Exception as exc:
     print(f"MLflow load failed ({exc}), falling back to joblib")
     model = joblib.load(PROCESSED_DIR / "best_model.pkl")
+
+# Vertex AI endpoint config
+USE_VERTEX = True
+PROJECT_ID = "mda-cycling-flanders"
+REGION = "europe-west1"
+ENDPOINT_NAME_FILE = PROCESSED_DIR / "vertex_endpoint.txt"
+
+if USE_VERTEX and ENDPOINT_NAME_FILE.exists():
+    try:
+        from google.cloud import aiplatform
+        aiplatform.init(project=PROJECT_ID, location=REGION)
+        vertex_endpoint = aiplatform.Endpoint(ENDPOINT_NAME_FILE.read_text().strip())
+        print("Using Vertex AI endpoint for predictions")
+    except Exception as exc:
+        print(f"Vertex init failed ({exc}), using local model")
+        vertex_endpoint = None
+else:
+    vertex_endpoint = None
+
+
+def predict(input_df):
+    """Predict using Vertex endpoint if available, else local model."""
+    if vertex_endpoint is not None:
+        instances = input_df.to_dict(orient="records")
+        response = vertex_endpoint.predict(instances=instances)
+        return np.array(response.predictions)
+    return model.predict(input_df)
 
 GEMEENTEN = sorted(df_hourly["gemeente"].dropna().unique())
 DEFAULT_GEMEENTE = "Leuven" if "Leuven" in GEMEENTEN else GEMEENTEN[0]
@@ -232,7 +259,7 @@ def server(input, output, session):
     @output
     @render.text
     def scenario_prediction():
-        pred = model.predict(scenario_input())[0]
+        pred = predict(scenario_input())[0]
         return f"Predicted daily cycling count: {pred:,.0f}"
 
     @output
@@ -245,7 +272,7 @@ def server(input, output, session):
         for r, t in zip(rows, temps):
             r["temperature_2m"] = t
         sweep_df = pd.DataFrame(rows)
-        preds = model.predict(sweep_df)
+        preds = predict(sweep_df)
 
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(temps, preds, linewidth=2, color="steelblue")

@@ -20,8 +20,13 @@ Shiny app:
 
 Docker:
 
-![alt text](image-5.png)
+![alt text](extra\image-5.png)
 
-![alt text](image-6.png)
+![alt text](extra\image-6.png)
 
-![alt text](image-7.png)
+![alt text](extra\image-7.png)
+
+Vertex AI:
+
+![alt text](extra-image-8.png)
+
