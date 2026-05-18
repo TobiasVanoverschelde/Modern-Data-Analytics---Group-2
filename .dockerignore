@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/
+notebooks/
+.git/
+data/raw/
+mlruns/
+figures/
+docs/
+tests/
+extra/
+.vscode/
+.DS_Store
