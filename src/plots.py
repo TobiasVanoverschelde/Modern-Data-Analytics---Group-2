@@ -1,149 +1,96 @@
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
 
 
-def plot_hourly_profile(df, savepath=None):
-    profile = (
-        df.groupby(["hour", "is_weekend"])["count"]
-          .mean()
-          .reset_index()
-    )
-    profile["day_type"] = np.where(profile["is_weekend"], "Weekend", "Weekday")
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.lineplot(data=profile, x="hour", y="count", hue="day_type",
-                 marker="o", ax=ax, linewidth=2)
-    ax.set_title("Average hourly cycling count: weekday vs. weekend",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Hour of day")
-    ax.set_ylabel("Average cyclists per hour")
-    ax.set_xticks(range(0, 24, 2))
-    ax.legend(title="Day type")
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+def plot_daily_trend(df):
+    grouped = df.groupby("datetime")["daily_count"].sum().reset_index()
+    return px.line(grouped, x="datetime", y="daily_count", title="Total Daily Cycling Volume in Flanders")
 
 
-def plot_monthly_seasonality(df, savepath=None):
-    daily = (
-        df.groupby([df["timestamp"].dt.date, "month"], as_index=False)["count"]
-          .sum()
-    )
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.boxplot(data=daily, x="month", y="count", ax=ax,
-                palette="viridis", showfliers=False)
-    ax.set_title("Daily-total cycling counts by month",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Month")
-    ax.set_ylabel("Total cyclists per day (all sites)")
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+def plot_monthly_seasonality(df):
+    grouped = df.groupby("month")["daily_count"].mean().reset_index()
+    return px.bar(grouped, x="month", y="daily_count", title="Average Cycling Volume by Month")
 
 
-def plot_yearly_trend(df, savepath=None):
-    yearly = df.groupby("year", as_index=False)["count"].sum()
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(data=yearly, x="year", y="count", ax=ax,
-                palette="rocket")
-    ax.set_title("Total cycling counts per year",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Year")
-    ax.set_ylabel("Total cyclists")
-    ax.bar_label(ax.containers[0], fmt="{:,.0f}", padding=3, fontsize=9)
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+def plot_weekday_pattern(df):
+    names = {0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday", 4: "Friday", 5: "Saturday", 6: "Sunday"}
+    grouped = df.groupby("weekday")["daily_count"].mean().reset_index()
+    grouped["weekday_name"] = grouped["weekday"].map(names)
+    return px.bar(grouped, x="weekday_name", y="daily_count", title="Average Cycling Volume by Weekday")
 
 
-def plot_dayofweek_profile(df, savepath=None):
-    profile = df.groupby("day_of_week", as_index=False)["count"].mean()
-    day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(data=profile, x="day_of_week", y="count", ax=ax,
-                palette="mako")
-    ax.set_xticklabels(day_labels)
-    ax.set_title("Average hourly cycling count by day of week",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Day of week")
-    ax.set_ylabel("Average cyclists per hour")
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+def plot_hourly_commuting_pattern(hourly):
+    grouped = hourly.groupby("hour")["hourly_count"].mean().reset_index()
+    return px.line(grouped, x="hour", y="hourly_count", markers=True, title="Average Hourly Cycling Pattern")
 
 
-def plot_heatmap_top_site(df, savepath=None):
-    busiest = df.groupby("site_id")["count"].sum().idxmax()
-    sub = df[df["site_id"] == busiest]
-    site_name = sub["gemeente"].iloc[0]
-
-    pivot = (
-        sub.groupby(["day_of_week", "hour"])["count"]
-           .mean()
-           .unstack("hour")
-    )
-    fig, ax = plt.subplots(figsize=(14, 5))
-    sns.heatmap(pivot, cmap="YlOrRd", ax=ax,
-                cbar_kws={"label": "Average cyclists per hour"})
-    ax.set_yticklabels(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-                       rotation=0)
-    ax.set_title(f"Hour × Day-of-week heatmap — busiest site: {site_name} (id={busiest})",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Hour of day")
-    ax.set_ylabel("Day of week")
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+def plot_weather_temperature(df):
+    return px.scatter(df, x="temperature_mean", y="daily_count", color="is_weekend", trendline="ols", title="Temperature and Cycling Volume")
 
 
-def plot_top_gemeenten(df, top_n=15, savepath=None):
-    daily_per_gem = (
-        df.groupby(["gemeente", df["timestamp"].dt.date])["count"]
-          .sum()
-          .reset_index()
-          .groupby("gemeente")["count"]
-          .mean()
-          .reset_index(name="avg_daily")
-          .nlargest(top_n, "avg_daily")
+def plot_weather_rain(df):
+    grouped = df.groupby("is_rainy_day")["daily_count"].mean().reset_index()
+    grouped["weather"] = grouped["is_rainy_day"].map({0: "Dry day", 1: "Rainy day"})
+    return px.bar(grouped, x="weather", y="daily_count", title="Average Cycling Volume on Dry vs Rainy Days")
+
+
+def plot_top_municipalities(df):
+    grouped = df.groupby("municipality")["daily_count"].mean().sort_values(ascending=False).head(15).reset_index()
+    return px.bar(grouped, x="daily_count", y="municipality", orientation="h", title="Top Municipalities by Average Daily Cycling Volume")
+
+
+def plot_map(df):
+    map_df = df.groupby(["site_id", "municipality", "latitude", "longitude"])["daily_count"].mean().reset_index().dropna(subset=["latitude", "longitude"])
+    return px.scatter_mapbox(
+        map_df,
+        lat="latitude",
+        lon="longitude",
+        size="daily_count",
+        color="daily_count",
+        hover_name="municipality",
+        zoom=7,
+        height=650,
+        title="Spatial Distribution of Cycling Counts",
+        mapbox_style="open-street-map"
     )
 
-    fig, ax = plt.subplots(figsize=(10, 7))
-    sns.barplot(data=daily_per_gem, y="gemeente", x="avg_daily", ax=ax,
-                palette="crest")
-    ax.set_title(f"Top {top_n} gemeenten by average daily cyclists",
-                 fontsize=14, fontweight="bold")
-    ax.set_xlabel("Average cyclists per day")
-    ax.set_ylabel("")
-    if savepath:
-        fig.savefig(savepath, dpi=150, bbox_inches="tight")
-    plt.show()
+
+def plot_model_comparison(results_table):
+    return px.bar(results_table, x="model", y="RMSE", title="Model Comparison: Lower RMSE is Better")
 
 
-def plot_site_map(df, top_n=50):
-    import folium
+def plot_actual_vs_predicted(prediction_df):
+    return px.scatter(prediction_df, x="daily_count", y="prediction", color="municipality", trendline="ols", title="Actual vs Predicted Daily Cycling Counts")
 
-    daily_per_site = (
-        df.groupby(["site_id", "gemeente", "lat", "lon"])["count"]
-          .agg(daily_avg=lambda s: s.sum() / max(s.index.nunique(), 1))
-          .reset_index()
-          .nlargest(top_n, "daily_avg")
+
+def plot_residuals(prediction_df):
+    return px.scatter(prediction_df, x="prediction", y="residual", color="municipality", title="Residual Analysis")
+
+
+def plot_feature_importance(importance_df):
+    if importance_df.empty:
+        return px.bar(title="Feature importance not available for selected model")
+    top = importance_df.head(20).sort_values("importance")
+    return px.bar(top, x="importance", y="feature", orientation="h", title="Top 20 Feature Importances")
+
+
+def plot_permutation_importance(importance_df):
+    top = importance_df.head(15).sort_values("importance_mean")
+    return px.bar(top, x="importance_mean", y="feature", orientation="h", error_x="importance_std", title="Permutation Importance")
+
+
+def plot_site_segments(segments):
+    return px.scatter(
+        segments,
+        x="commuter_ratio",
+        y="weekend_ratio",
+        size="avg_hourly_count",
+        color="segment_label",
+        hover_data=["site_id"],
+        title="Behavioural Segmentation of Counting Sites"
     )
 
-    centre = [daily_per_site["lat"].mean(), daily_per_site["lon"].mean()]
-    m = folium.Map(location=centre, zoom_start=8, tiles="cartodbpositron")
 
-    max_count = daily_per_site["daily_avg"].max()
-    for _, row in daily_per_site.iterrows():
-        folium.CircleMarker(
-            location=[row["lat"], row["lon"]],
-            radius=3 + 17 * (row["daily_avg"] / max_count),
-            popup=f"<b>{row['gemeente']}</b><br>~{row['daily_avg']:.0f}/day<br>id={row['site_id']}",
-            color="crimson",
-            fill=True,
-            fill_opacity=0.6,
-        ).add_to(m)
-    return m
+def plot_anomalies(df):
+    anomaly_df = df.groupby("datetime").agg(total_count=("daily_count", "sum"), anomaly_sites=("is_anomaly_day", "sum")).reset_index()
+    return px.scatter(anomaly_df, x="datetime", y="total_count", size="anomaly_sites", title="Anomaly Days in Cycling Volume")
