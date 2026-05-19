@@ -1,51 +1,33 @@
-# Cycling Behaviour in Flanders
+Test test
 
-## Objective
+TO DO: API naar fiets-/weer-data?
 
-This project investigates what drives cycling volume in Flanders using automatic bicycle count data from AWV.
+Images in folder \extra\
 
-The analysis combines temporal cycling behaviour, spatial variation, weather conditions, behavioural segmentation, explainable machine learning, and interactive dashboarding.
+MLFlow UI:
 
-## Data
+![alt text](extra\image.png)
 
-Place your raw datasets here:
+![alt text](extra\image-1.png)
 
-```text
-data/raw/
-```
+Shiny app:
 
-Expected files:
+![alt text](extra\image-2.png)
 
-```text
-data-2019-08.csv
-data-2019-09.csv
-...
-data-2026-05.csv
-sites.csv
-richtingen.csv
-```
+![alt text](extra\image-3.png)
 
-## Run Locally
+![alt text](extra\image-4.png)
 
-```bash
-pip install -r requirements.txt
-python main.py
-shiny run app.py
-```
+Docker:
 
-Open the dashboard at the URL shown by Shiny, usually:
+![alt text](extra\image-5.png)
 
-```text
-http://localhost:8000
-```
+![alt text](extra\image-6.png)
 
-## Run with Docker
+![alt text](extra\image-7.png)
 
-```bash
-docker build -t cycling-flanders-dashboard .
-docker run -p 8000:8000 cycling-flanders-dashboard
-```
+Vertex AI:
 
-## Course Alignment
+![alt text](extra-image-8.png)
 
-This project demonstrates Python, OOP, pandas/numpy, scikit-learn pipelines, ML algorithms, Shiny dashboarding, Git-ready structure, Docker containerisation and scalable data processing.
+![alt text](extra\image-9.png)
