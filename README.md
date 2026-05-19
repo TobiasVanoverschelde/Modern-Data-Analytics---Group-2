@@ -1,33 +1,130 @@
-Test test
+# Cycling Patterns in Flanders
 
-TO DO: API naar fiets-/weer-data?
+Modern Data Analytics — Group 2 — KU Leuven
 
-Images in folder \extra\
+An exploratory analysis of cycling traffic in Flanders, combining automatic
+bicycle counter data from the Agentschap Wegen en Verkeer (AWV) with weather,
+calendar and spatial features. The model's feature importances and partial
+dependences serve as the analytical backbone, and results are presented through
+an interactive Shiny for Python dashboard.
 
-MLFlow UI:
+## Research questions
 
-![alt text](extra\image.png)
+1. **What drives cycling volume in Flanders?** Relative contribution of weather, temporal and location features to daily cycling counts.
+2. **How do cycling patterns vary across time and space?** Peak times, seasonal trends, and variation across municipalities and counting sites.
+3. **How sensitive is cycling to weather?** Marginal effect of one degree of temperature, one millimeter of rain, etc.
 
-![alt text](extra\image-1.png)
+## Setup
 
-Shiny app:
+```bash
+pip install -r requirements.txt
+python -m src.download_data                  # downloads counts + sites + directions to data/raw/
+jupyter notebook                             # then run notebooks/01 -> 02 -> 03 in order
+shiny run --reload --launch-browser app.py   # launches dashboard on http://localhost:8000
+```
 
-![alt text](extra\image-2.png)
+Docker alternative:
 
-![alt text](extra\image-3.png)
+```bash
+docker build -t mda-cycling .
+docker run -p 8000:8000 mda-cycling
+```
 
-![alt text](extra\image-4.png)
+## Data
+
+AWV bicycle count data (August 2019 onward), publicly available from
+[opendata.apps.mow.vlaanderen.be](https://opendata.apps.mow.vlaanderen.be/fietstellingen/index.html).
+Three linked CSVs: monthly counts, site metadata (with lat/lon), and direction
+metadata. Enriched with daily weather observations from the Open-Meteo API and
+Belgian public holidays.
+
+## Repository structure
+
+```
+src/
+  loaders.py         CSV readers for counts/sites/directions
+  cleaning.py        filter to cyclists, hourly aggregation, outlier removal
+  weather.py         Open-Meteo API integration
+  features.py        cyclical time encoding, COVID periods, holidays, lat/lon
+  modeling.py        ColumnTransformer + pipeline + temporal CV
+  interpretation.py  permutation importance + partial dependence
+  tracking.py        MLflow setup
+  deploy_vertex.py   Google Cloud Vertex AI deployment
+notebooks/
+  01_data_preparation.ipynb           load → clean → features → parquet
+  02_exploratory_data_analysis.ipynb  temporal, spatial and weather EDA
+  03_machine_learning_pipeline.ipynb  train, compare, interpret
+app.py               Shiny dashboard (3 tabs)
+Dockerfile           containerization
+```
+
+## Methodology
+
+**Feature engineering**
+- Temporal: cyclical sin/cos encoding of day-of-week and month, rush-hour flags, weekend and holiday flags
+- Calendar: five COVID periods (pre, first lockdown, summer, second lockdown, post)
+- Spatial: WGS84 latitude/longitude per counting site
+- Weather: temperature, precipitation, wind speed, cloud cover
+
+**Modeling**
+- ColumnTransformer with standardization for numerical features and one-hot encoding for categoricals
+- Temporal train/test split (cutoff at the 80th percentile of dates)
+- GridSearchCV with TimeSeriesSplit (5 folds)
+- Four models compared via MLflow tracking
+
+**Interpretation**
+- Permutation importance (unbiased w.r.t. cardinality, unlike tree-built-in importance)
+- Partial dependence plots for weather features (temperature, precipitation, wind)
+
+## Results
+
+Daily count prediction on a held-out temporal test set (last 20% of dates):
+
+| Model                  | Test MAE | RMSE  | R²   |
+|------------------------|---------:|------:|-----:|
+| Ridge                  |   194.7  | 362.4 | 0.77 |
+| Random Forest          |   244.6  | 348.4 | 0.78 |
+| Gradient Boosting      |   153.9  | 270.8 | 0.87 |
+| **HistGradientBoosting** |  **128.0** | **250.5** | **0.89** |
+
+Best model: `HistGradientBoostingRegressor` with `max_depth=7`, `max_iter=500`,
+`learning_rate=0.1`. Saved as `data/processed/best_model.pkl` and registered in
+MLflow as `cycling-flanders`.
+
+## Dashboard
+
+Three tabs:
+
+1. **Temporal explorer** — hourly profile, day-of-week and seasonal patterns per municipality
+2. **Model insights** — top feature importances and predicted vs. actual scatter
+3. **Weather impact** — what-if scenarios for temperature, precipitation and wind, with a partial-dependence plot showing the average effect of temperature across all sites
+
+## Deployment
+
+- Local: `shiny run app.py`
+- Docker: see `Dockerfile`
+- Google Cloud Vertex AI: see `src/deploy_vertex.py` (work in progress)
+
+## Screenshots
+
+MLflow UI:
+
+![MLflow runs](extra/image.png)
+![MLflow model registry](extra/image-1.png)
+
+Shiny dashboard:
+
+![Temporal explorer](extra/image-2.png)
+![Model insights](extra/image-3.png)
+![Weather impact](extra/image-4.png)
 
 Docker:
 
-![alt text](extra\image-5.png)
-
-![alt text](extra\image-6.png)
-
-![alt text](extra\image-7.png)
+![Docker build](extra/image-5.png)
+![Docker run](extra/image-6.png)
+![Docker container](extra/image-7.png)
 
 Vertex AI:
 
-![alt text](extra-image-8.png)
-
-![alt text](extra\image-9.png)
+![Vertex AI setup](extra/image-8.png)
+![Vertex AI deployment](extra/image-9.png)
