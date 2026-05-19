@@ -13,7 +13,11 @@ PROCESSED_DIR = Path(__file__).parent / "data" / "processed"
 
 df_hourly = pd.read_parquet(PROCESSED_DIR / "cycling_features.parquet")
 df_daily = pd.read_parquet(PROCESSED_DIR / "daily_for_modeling.parquet")
-df_daily = add_cyclical_encoding(df_daily) 
+df_daily = add_cyclical_encoding(df_daily)
+
+# Optional: partial dependence results pre-computed in notebook 03
+pdp_path = PROCESSED_DIR / "pdp_results.parquet"
+pdp_df = pd.read_parquet(pdp_path) if pdp_path.exists() else None
 
 # Model — try MLflow first, otherwise fall back to joblib
 try:
@@ -147,6 +151,8 @@ app_ui = ui.page_navbar(
             ui.output_text("scenario_prediction"),
             ui.h3("Effect of temperature, sweeping all values"),
             ui.output_plot("weather_sweep_plot"),
+            ui.h3("Average effect of temperature across all sites (partial dependence)"),
+            ui.output_plot("pdp_temperature"),
             ui.h3("Observed effect of weather"),
             ui.output_plot("weather_scatter_plot"),
         ),
@@ -303,6 +309,24 @@ def server(input, output, session):
         ax.set_ylabel("Predicted daily count")
         ax.set_title("Predicted count as a function of temperature")
         ax.legend()
+        return fig
+
+    @output
+    @render.plot
+    def pdp_temperature():
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        if pdp_df is None:
+            ax.text(0.5, 0.5,
+                    "Run notebook 03 to generate pdp_results.parquet",
+                    ha="center", va="center", transform=ax.transAxes)
+            ax.axis("off")
+            return fig
+        sub = pdp_df[pdp_df["feature"] == "temperature_2m"]
+        ax.plot(sub["grid_value"], sub["prediction"],
+                color="steelblue", linewidth=2)
+        ax.set_xlabel("Temperature (°C)")
+        ax.set_ylabel("Avg predicted daily count")
+        ax.set_title("Partial dependence: temperature")
         return fig
 
     @output
