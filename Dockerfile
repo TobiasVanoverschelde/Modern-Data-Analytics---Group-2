@@ -1,15 +1,12 @@
-# slim image for smaller size
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements-prod.txt .
-RUN pip install -r requirements-prod.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ./src/
-COPY app.py .
-COPY data/processed/ ./data/processed/
+COPY . .
 
 EXPOSE 8000
 
-CMD ["shiny", "run", "--host", "0.0.0.0", "--port", "8000", "app.py"]
+CMD ["shiny", "run", "app.py", "--host", "0.0.0.0", "--port", "8000"]
