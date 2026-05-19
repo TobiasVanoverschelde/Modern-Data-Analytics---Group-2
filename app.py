@@ -56,6 +56,19 @@ def predict(input_df):
 GEMEENTEN = sorted(df_hourly["gemeente"].dropna().unique())
 DEFAULT_GEMEENTE = "Leuven" if "Leuven" in GEMEENTEN else GEMEENTEN[0]
 
+# Average lat/lon per gemeente, used as spatial input for what-if scenarios.
+# Falls back to a Flanders-centre coordinate when a gemeente has no sites with coordinates.
+if {"lat", "lon"}.issubset(df_daily.columns):
+    GEMEENTE_COORDS = (
+        df_daily.dropna(subset=["lat", "lon"])
+                .groupby("gemeente")[["lat", "lon"]]
+                .mean()
+                .to_dict("index")
+    )
+else:
+    GEMEENTE_COORDS = {}
+FLANDERS_CENTRE = {"lat": 51.0, "lon": 4.5}
+
 sns.set_theme(style="whitegrid", context="notebook")
 
 # UI
@@ -246,11 +259,14 @@ def server(input, output, session):
     def scenario_input():
         day = int(input.scenario_day())
         month = 6                        # neutral default
+        coords = GEMEENTE_COORDS.get(input.scenario_gemeente(), FLANDERS_CENTRE)
         return pd.DataFrame([{
             "temperature_2m": input.temp(),
             "precipitation": input.precip(),
             "wind_speed_10m": input.wind(),
             "cloud_cover": 50.0,         # neutral default
+            "lat": coords["lat"],
+            "lon": coords["lon"],
             "day_of_week_sin": np.sin(2 * np.pi * day / 7),
             "day_of_week_cos": np.cos(2 * np.pi * day / 7),
             "month_sin": np.sin(2 * np.pi * month / 12),

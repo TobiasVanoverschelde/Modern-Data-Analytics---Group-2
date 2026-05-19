@@ -9,7 +9,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 RANDOM_STATE = 42
 
-NUMERIC_FEATURES = ["temperature_2m", "precipitation", "wind_speed_10m", "cloud_cover"]
+NUMERIC_FEATURES = ["temperature_2m", "precipitation", "wind_speed_10m", "cloud_cover", "lat", "lon"]
 CYCLICAL_FEATURES = ["day_of_week_sin", "day_of_week_cos", "month_sin", "month_cos"]
 CATEGORICAL_FEATURES = ["gemeente", "covid_period"]
 BOOL_FEATURES = ["is_weekend", "is_holiday"]

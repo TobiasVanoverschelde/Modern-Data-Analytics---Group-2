@@ -48,3 +48,13 @@ def add_holidays(df):
     df = df.copy()
     df["is_holiday"] = df["timestamp"].dt.date.map(lambda d: d in be_holidays)
     return df
+
+
+def add_spatial_features(df, sites_df):
+    """Join WGS84 lat/lon per site so the model can learn geographic proximity
+    instead of relying solely on the categorical gemeente encoding."""
+    df = df.copy()
+    df["site_id"] = df["site_id"].astype(str)
+    coords = sites_df[["site_id", "lat", "lon"]].copy()
+    coords["site_id"] = coords["site_id"].astype(str)
+    return df.merge(coords, on="site_id", how="left")
