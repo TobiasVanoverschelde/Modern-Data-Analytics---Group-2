@@ -33,3 +33,6 @@ credentials.json
 service-account*.json
 .aws/
 .gcloud/
+context/
+Project_Proposal.docx
+*.docx
