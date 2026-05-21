@@ -15,9 +15,12 @@ df_hourly = pd.read_parquet(PROCESSED_DIR / "cycling_features.parquet")
 df_daily = pd.read_parquet(PROCESSED_DIR / "daily_for_modeling.parquet")
 df_daily = add_cyclical_encoding(df_daily)
 
-# Optional: partial dependence results pre-computed in notebook 03
+# Interpretation artifacts, pre-computed by src/training.py
 pdp_path = PROCESSED_DIR / "pdp_results.parquet"
 pdp_df = pd.read_parquet(pdp_path) if pdp_path.exists() else None
+
+importance_path = PROCESSED_DIR / "feature_importance.parquet"
+importance_df_static = pd.read_parquet(importance_path) if importance_path.exists() else None
 
 # Model — try MLflow first, otherwise fall back to joblib
 try:
@@ -74,6 +77,35 @@ else:
 FLANDERS_CENTRE = {"lat": 51.0, "lon": 4.5}
 
 sns.set_theme(style="whitegrid", context="notebook")
+
+
+def build_site_map(daily_df: pd.DataFrame, top_n: int = 50) -> str:
+    """Folium map of the top-N busiest sites; returns embeddable HTML."""
+    import folium
+
+    per_site = (
+        daily_df.dropna(subset=["lat", "lon"])
+                .groupby(["site_id", "gemeente", "lat", "lon"], as_index=False)["count"]
+                .mean()
+                .nlargest(top_n, "count")
+    )
+    if per_site.empty:
+        return "<i>No sites with coordinates available.</i>"
+
+    centre = [per_site["lat"].mean(), per_site["lon"].mean()]
+    m = folium.Map(location=centre, zoom_start=8, tiles="cartodbpositron")
+
+    max_count = per_site["count"].max()
+    for _, row in per_site.iterrows():
+        folium.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=3 + 17 * (row["count"] / max_count),
+            popup=f"<b>{row['gemeente']}</b><br>~{row['count']:.0f} cyclists/day<br>site {row['site_id']}",
+            color="crimson",
+            fill=True,
+            fill_opacity=0.6,
+        ).add_to(m)
+    return m._repr_html_()
 
 # UI
 app_ui = ui.page_navbar(
@@ -158,6 +190,25 @@ app_ui = ui.page_navbar(
         ),
     ),
 
+    # Tab 4: Spatial
+    ui.nav_panel(
+        "Spatial",
+        ui.layout_sidebar(
+            ui.sidebar(
+                ui.input_numeric("spatial_top_n", "Show top N sites",
+                                 value=50, min=10, max=200),
+                ui.markdown(
+                    "**Where do people cycle?** Circle size encodes average daily "
+                    "count per counting site. `lat`/`lon` are also numeric features "
+                    "in the model, so the regressor can learn geographic gradients "
+                    "(urban vs rural) on top of the categorical municipality."
+                ),
+            ),
+            ui.h3("Top counting sites in Flanders"),
+            ui.output_ui("spatial_map"),
+        ),
+    ),
+
     title="Cycling Patterns in Flanders",
 )
 
@@ -221,15 +272,13 @@ def server(input, output, session):
     # ------------- Tab 2: Model Insights -------------
     @reactive.Calc
     def importance_df():
-        preprocessor = model.named_steps["preprocess"]
-        regressor = model.named_steps["regressor"]
-        feature_names = preprocessor.get_feature_names_out()
-        if hasattr(regressor, "feature_importances_"):
-            values = regressor.feature_importances_
-            return pd.DataFrame({"feature": feature_names, "importance": values})
-        else:
-            return pd.DataFrame({"feature": feature_names,
-                                 "importance": np.abs(regressor.coef_)})
+        # Use the saved permutation importance: model-agnostic, less biased
+        # against one-hot categoricals than the tree built-in importance.
+        if importance_df_static is not None:
+            return importance_df_static
+        # Fallback if the artifact wasn't generated (shouldn't happen in
+        # normal flow — training script saves it).
+        return pd.DataFrame({"feature": [], "importance": []})
 
     @output
     @render.plot
@@ -340,6 +389,13 @@ def server(input, output, session):
         ax.set_ylabel("Daily count")
         ax.set_title(f"Observed: temp vs count in {input.scenario_gemeente()}")
         return fig
+
+    # ------------- Tab 4: Spatial -------------
+    @output
+    @render.ui
+    def spatial_map():
+        html = build_site_map(df_daily, top_n=input.spatial_top_n())
+        return ui.HTML(html)
 
 
 app = App(app_ui, server)
