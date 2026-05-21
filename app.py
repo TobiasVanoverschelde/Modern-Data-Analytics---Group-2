@@ -81,33 +81,6 @@ FLANDERS_CENTRE = {"lat": 51.0, "lon": 4.5}
 sns.set_theme(style="whitegrid", context="notebook")
 
 
-SITES = (
-    df_daily.dropna(subset=["lat", "lon"])
-            .groupby(["site_id", "gemeente"], as_index=False)[["lat", "lon"]]
-            .mean()
-)
-
-
-def build_predicted_map(sites_df: pd.DataFrame, predictions) -> str:
-    """Folium map with each counter coloured by its predicted daily count."""
-    import folium
-    import matplotlib.colors as mcolors
-
-    centre = [sites_df["lat"].mean(), sites_df["lon"].mean()]
-    m = folium.Map(location=centre, zoom_start=8, tiles="cartodbpositron")
-
-    cmap = plt.cm.RdYlBu_r
-    norm = mcolors.Normalize(vmin=float(predictions.min()), vmax=float(predictions.max()))
-    for (_, row), pred in zip(sites_df.iterrows(), predictions):
-        hex_color = mcolors.to_hex(cmap(norm(pred)))
-        folium.CircleMarker(
-            location=[row["lat"], row["lon"]],
-            radius=7,
-            popup=f"<b>{row['gemeente']}</b><br>Predicted: {pred:,.0f} cyclists/day",
-            color=hex_color, fill=True, fill_color=hex_color, fill_opacity=0.8,
-        ).add_to(m)
-    return m._repr_html_()
-
 # UI
 app_ui = ui.page_navbar(
     # Tab 1: Temporal Explorer
@@ -191,35 +164,6 @@ app_ui = ui.page_navbar(
         ),
     ),
 
-    # Tab 4: Spatial
-    ui.nav_panel(
-        "Spatial",
-        ui.layout_sidebar(
-            ui.sidebar(
-                ui.input_slider("spatial_temp", "Temperature (°C)",
-                                min=-5, max=35, value=15, step=1),
-                ui.input_slider("spatial_precip", "Precipitation (mm)",
-                                min=0, max=30, value=0, step=0.5),
-                ui.input_slider("spatial_wind", "Wind speed (km/h)",
-                                min=0, max=60, value=10, step=1),
-                ui.input_select(
-                    "spatial_day", "Day of week",
-                    choices={"0": "Monday", "1": "Tuesday", "2": "Wednesday",
-                             "3": "Thursday", "4": "Friday", "5": "Saturday",
-                             "6": "Sunday"},
-                    selected="2",
-                ),
-                ui.markdown(
-                    "**Where does the model expect cycling activity?** "
-                    "Each circle is a counter location, coloured by the model's "
-                    "prediction under the conditions on the left."
-                ),
-            ),
-            ui.h3("Predicted cycling activity per counter"),
-            ui.output_ui("spatial_map"),
-        ),
-    ),
-
     title="Cycling Patterns in Flanders",
 )
 
@@ -246,9 +190,12 @@ def server(input, output, session):
             fig, ax = plt.subplots()
             ax.text(0.5, 0.5, "No data for selection", ha="center", va="center")
             return fig
+        # Total cyclists per (day, hour) summed across counters in selection,
+        # then averaged across days. More intuitive than mean per counter-day.
         profile = (
-            sub.groupby(["hour", "is_weekend"])["count"]
-               .mean()
+            sub.groupby([sub["timestamp"].dt.date, "hour", "is_weekend"],
+                        as_index=False)["count"].sum()
+               .groupby(["hour", "is_weekend"])["count"].mean()
                .reset_index()
         )
         profile["day_type"] = np.where(profile["is_weekend"], "Weekend", "Weekday")
@@ -271,14 +218,16 @@ def server(input, output, session):
             return fig
         fig, axes = plt.subplots(1, 2, figsize=(14, 4))
         day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        dow = sub.groupby("day_of_week")["count"].mean().reset_index()
-        sns.barplot(data=dow, x="day_of_week", y="count", ax=axes[0],
-                    palette="mako")
+        # Daily totals across selection, then mean per day-of-week / month.
+        daily = sub.groupby([sub["timestamp"].dt.date, "day_of_week", "month"],
+                            as_index=False)["count"].sum()
+        dow = daily.groupby("day_of_week")["count"].mean().reset_index()
+        sns.barplot(data=dow, x="day_of_week", y="count", ax=axes[0], palette="mako")
         axes[0].set_xticklabels(day_labels)
-        axes[0].set_title("By day of week")
-        mn = sub.groupby("month")["count"].mean().reset_index()
+        axes[0].set_title("Avg daily total by day of week")
+        mn = daily.groupby("month")["count"].mean().reset_index()
         sns.barplot(data=mn, x="month", y="count", ax=axes[1], palette="viridis")
-        axes[1].set_title("By month")
+        axes[1].set_title("Avg daily total by month")
         plt.tight_layout()
         return fig
 
@@ -432,34 +381,6 @@ def server(input, output, session):
         ax.set_ylabel("Daily count")
         ax.set_title(f"Observed: temp vs count in {input.scenario_gemeente()}")
         return fig
-
-    # ------------- Tab 4: Spatial -------------
-    @reactive.Calc
-    def spatial_predictions():
-        day = int(input.spatial_day())
-        month = 6
-        rows = [{
-            "temperature_2m": input.spatial_temp(),
-            "precipitation": input.spatial_precip(),
-            "wind_speed_10m": input.spatial_wind(),
-            "cloud_cover": 50.0,
-            "lat": s["lat"],
-            "lon": s["lon"],
-            "day_of_week_sin": np.sin(2 * np.pi * day / 7),
-            "day_of_week_cos": np.cos(2 * np.pi * day / 7),
-            "month_sin": np.sin(2 * np.pi * month / 12),
-            "month_cos": np.cos(2 * np.pi * month / 12),
-            "gemeente": s["gemeente"],
-            "covid_period": "post_covid",
-            "is_weekend": day >= 5,
-            "is_holiday": False,
-        } for _, s in SITES.iterrows()]
-        return np.asarray(predict(pd.DataFrame(rows)))
-
-    @output
-    @render.ui
-    def spatial_map():
-        return ui.HTML(build_predicted_map(SITES, spatial_predictions()))
 
 
 app = App(app_ui, server)
