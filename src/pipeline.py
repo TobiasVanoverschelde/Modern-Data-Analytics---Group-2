@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from src.loaders import load_counts, load_sites, load_directions
+from src.loaders import COLUMN_NAMES, load_sites
 from src.cleaning import clean_counts, merge_with_sites
 from src.features import (
     add_calendar_features, add_holidays, add_covid_period, add_cyclical_encoding,
@@ -23,7 +23,7 @@ from src.weather import fetch_open_meteo
 
 AWV_BASE = "https://opendata.apps.mow.vlaanderen.be/fietstellingen/"
 
-# One central Flanders point — the proposal calls this out as "undecided". Per-site
+# One central Flanders point 
 # weather would mean ~75× the API calls; the spatial variation is small enough that
 # one central pull is a reasonable compromise.
 FLANDERS_LAT, FLANDERS_LON = 50.88, 4.70
@@ -71,17 +71,17 @@ class CyclingDataPipeline:
         return [f"data-{p.year}-{p.month:02d}.csv"
                 for p in pd.period_range(start, end, freq="M")]
 
-    # Read raw CSVs into 3 DataFrames.
-    def load(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        return (
-            load_counts(self.raw_dir),
-            load_sites(self.raw_dir),
-            load_directions(self.raw_dir),
-        )
-
-    # Filter to cyclists, aggregate to hourly, join site metadata (incl. lat/lon).
-    def clean(self, counts: pd.DataFrame, sites: pd.DataFrame) -> pd.DataFrame:
-        return merge_with_sites(clean_counts(counts), sites)
+    # Stream-process one monthly CSV at a time. Each file is cleaned + aggregated
+    # to hourly inside the loop, so we never hold all ~42M raw rows in memory.
+    # Then we concat the (much smaller) hourly frames and join site metadata.
+    def clean(self, sites: pd.DataFrame) -> pd.DataFrame:
+        hourly = []
+        for f in sorted(self.raw_dir.glob("data-*.csv")):
+            raw = pd.read_csv(f, sep=",", header=None,
+                              names=COLUMN_NAMES, low_memory=False)
+            hourly.append(clean_counts(raw))
+            print(f"  cleaned {f.name}")
+        return merge_with_sites(pd.concat(hourly, ignore_index=True), sites)
 
     # Calendar, holidays, COVID period, cyclical encoding.
     # Spatial features (lat/lon) already attached during clean().
@@ -122,8 +122,8 @@ class CyclingDataPipeline:
 
     def run(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         self.download()
-        counts, sites, _ = self.load()
-        hourly = self.add_weather(self.add_features(self.clean(counts, sites)))
+        sites = load_sites(self.raw_dir)
+        hourly = self.add_weather(self.add_features(self.clean(sites)))
         daily = self.daily_aggregate(hourly)
         self.save(hourly, daily)
         return hourly, daily
