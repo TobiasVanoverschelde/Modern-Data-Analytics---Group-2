@@ -18,17 +18,24 @@ an interactive Shiny for Python dashboard.
 
 ```bash
 pip install -r requirements.txt
-python -m src.download_data                  # downloads counts + sites + directions to data/raw/
-jupyter notebook                             # then run notebooks/01 -> 02 -> 03 in order
-shiny run --reload --launch-browser app.py   # launches dashboard on http://localhost:8000
+python -m src.pipeline                       # download + clean + features + weather + daily aggregation
+python -m src.training                       # train, compare, interpret, register best in MLflow
+shiny run --reload --launch-browser app.py   # dashboard on http://localhost:8000
 ```
 
-Docker alternative:
+The `notebooks/` directory holds the original exploratory work and is
+kept for reference. The `src/pipeline.py` and `src/training.py` modules
+supersede them for reproducible runs.
+
+Docker (recommended, no local Python setup needed):
 
 ```bash
 docker build -t mda-cycling .
 docker run -p 8000:8000 mda-cycling
 ```
+
+The build stage downloads the raw data, runs the pipeline and trains
+the models, so `docker run` starts the Shiny dashboard immediately.
 
 ## Data
 
@@ -49,13 +56,13 @@ src/
   modeling.py        ColumnTransformer + pipeline + temporal CV
   interpretation.py  permutation importance + partial dependence
   tracking.py        MLflow setup
-  deploy_vertex.py   Google Cloud Vertex AI deployment
-notebooks/
-  01_data_preparation.ipynb           load → clean → features → parquet
-  02_exploratory_data_analysis.ipynb  temporal, spatial and weather EDA
-  03_machine_learning_pipeline.ipynb  train, compare, interpret
+  pipeline.py        end-to-end data pipeline (supersedes nb 01-02)
+  training.py        end-to-end training + interpretation (supersedes nb 03)
+  deploy_vertex.py   Google Cloud Vertex AI deployment (work in progress)
+notebooks/           original exploratory notebooks (kept for reference)
 app.py               Shiny dashboard (3 tabs)
-Dockerfile           containerization
+Dockerfile           multi-stage build (deps -> training -> serving)
+tests/               pytest smoke tests for features and modelling
 ```
 
 ## Methodology

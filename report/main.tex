@@ -261,16 +261,19 @@ Inside the training set we use \texttt{GridSearchCV} with
 respects the temporal ordering. Models are selected on the basis of
 mean absolute error (MAE) on the cross-validation folds.
 
-We compare four regression families:
+We compare three regression families:
 
 \begin{itemize}[leftmargin=*]
   \item \textbf{Ridge regression}, as a linear baseline.
   \item \textbf{Random Forest}, as a non-linear baseline.
-  \item \textbf{Gradient Boosting}, the canonical tree-boosting
-  algorithm.
   \item \textbf{HistGradientBoosting}, a fast histogram-based variant
-  suitable for large tabular data.
+  of gradient-boosted trees that handles missing values natively and
+  scales well on tabular data of this size.
 \end{itemize}
+
+All stochastic estimators are seeded with \texttt{random\_state = 42}
+so a re-run reproduces the same model selection and the same test
+metrics.
 
 \subsection{Interpretation techniques}
 
@@ -312,23 +315,22 @@ on all three metrics.
 
 \begin{table}[ht]
 \centering
-\caption{Test-set performance of the four models.}
+\caption{Test-set performance of the three models.}
 \label{tab:results}
 \begin{tabular}{lrrr}
 \toprule
 Model & Test MAE & RMSE & R\textsuperscript{2} \\
 \midrule
-Ridge                       & 194.7          & 362.4          & 0.77          \\
-Random Forest               & 244.6          & 348.4          & 0.78          \\
-Gradient Boosting           & 153.9          & 270.8          & 0.87          \\
-\textbf{HistGradientBoosting} & \textbf{128.0} & \textbf{250.5} & \textbf{0.89} \\
+Ridge                         & 193.3          & 362.0          & 0.77          \\
+Random Forest                 & 223.5          & 333.6          & 0.80          \\
+\textbf{HistGradientBoosting} & \textbf{127.2} & \textbf{249.8} & \textbf{0.89} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The best HistGradientBoosting configuration uses
-\texttt{max\_depth = 7}, \texttt{max\_iter = 500}, and
-\texttt{learning\_rate = 0.1}, selected by five-fold
+\texttt{learning\_rate = 0.1}, \texttt{max\_iter = 500} and no depth
+cap (\texttt{max\_depth = None}), selected by five-fold
 \texttt{TimeSeriesSplit} cross-validation on training MAE.
 
 A predicted-vs-actual scatter plot of the test set (see Appendix,
@@ -342,19 +344,27 @@ works, exam periods) drive unmodelled variation.
 \subsection{What drives cycling volume? (RQ~1)}
 
 The permutation importance ranking (Figure~A2) places the
-\textbf{categorical municipality} as the strongest single driver:
-gemeente captures persistent local cycling cultures that no purely
-temporal or weather feature can replicate. \textbf{Temperature} is the
-strongest weather driver, followed by \textbf{precipitation}. Within
-the temporal features, the \textbf{weekend flag} and \textbf{day-of-week
-cyclic features} dominate over \texttt{hour} (which is constant at the
-daily aggregation level), reflecting the strong weekday/weekend split
-visible in the exploratory analysis. The newly added \textbf{latitude
-and longitude features} absorb part of the variance previously
-attributed to one-hot \texttt{gemeente} columns, providing a smoother
-geographic signal --- two nearby municipalities are now recognised as
-similar by the model, where the one-hot encoding had treated them as
-fully independent.
+\textbf{categorical municipality} far ahead of every other feature:
+\texttt{gemeente} captures persistent local cycling cultures that no
+temporal or weather feature can replicate. The next tier is much
+tighter and contains three features of comparable importance: the
+cyclic day-of-week encoding (\texttt{day\_of\_week\_sin}),
+\textbf{temperature}, and \textbf{latitude}. Longitude follows in
+fifth place, then \textbf{precipitation}. The weekly cycle is the
+strongest temporal driver, and within the weather block temperature
+matters more than rain.
+
+The latitude and longitude features absorb part of the variance that
+would otherwise be carried by the one-hot \texttt{gemeente} columns;
+two nearby municipalities are recognised as similar by the model,
+where the one-hot encoding treats them as fully independent.
+
+The COVID-period categorical contributes essentially nothing once the
+other features are present, with a permutation importance
+indistinguishable from zero. This does not mean COVID had no effect on
+cycling --- the exploratory analysis shows that it clearly did --- but
+that the within-period variation is already well explained by weather,
+calendar and location, so the period label adds no further signal.
 
 \subsection{How do cycling patterns vary across time and space? (RQ~2)}
 
@@ -372,17 +382,24 @@ Section~\ref{sec:eda}.
 \subsection{How sensitive is cycling to weather? (RQ~3)}
 
 The partial dependence plots (Figure~A3) yield direct quantitative
-answers. \textit{[Insert the actual slopes printed by
-\texttt{src/training.py}, of the form: \enquote{An additional degree
-Celsius of temperature is associated with an average increase of
-approximately X cyclists per day. An additional millimetre of
-precipitation reduces the predicted count by approximately Y. An
-additional metre per second of wind speed reduces it by approximately
-Z.}]} The temperature PDP is approximately linear in the range
-0--25\,\textdegree{}C and flattens above 25\,\textdegree{}C, suggesting
-diminishing returns at very high temperatures. The precipitation PDP
-shows a sharp drop in the first few millimetres and a more gradual
-decrease thereafter.
+answers. Over the observed range of roughly $1$--$21$\,\textdegree{}C
+the temperature PDP is approximately linear with an average slope of
+about $+13$ cyclists per day per degree, for a total swing of around
+$+260$ cyclists between the coldest and warmest days in the test set.
+The slope is slightly steeper in the middle of the range than at the
+extremes, where the curve begins to flatten.
+
+Precipitation has the expected negative effect, but the shape is not
+linear. The first few millimetres of rain account for most of the
+drop, after which the PDP plateaus; the total swing across the
+observed range is around $-100$ cyclists per day.
+
+Wind speed and cloud cover have smaller effects: roughly $-2$ cyclists
+per day per additional metre per second of wind, and about $-1$
+cyclist per day per additional percent of cloud cover. Over the full
+observed range that adds up to about $-35$ and $-100$ cyclists
+respectively. These magnitudes are consistent with the low permutation
+importances of the two features.
 
 % =====================================================================
 \section{Dashboard}
@@ -469,11 +486,21 @@ non-technical audience.
 Aggregating to daily resolution discards the intraday rush-hour
 structure that is clearly visible in the exploratory data; modelling
 at hourly resolution would recover this but at a substantial compute
-cost. The weather series is regional rather than per-site, so
-micro-climate variation across Flanders is not captured. Outlier
-flagging is statistical rather than event-based, so genuinely unusual
-but explicable cycling events (festivals, races) are treated
-identically to sensor anomalies.
+cost.
+
+The weather series is regional rather than per-site. We pull a single
+hourly series for a central Flanders point and join it to every site;
+this is a deliberate trade-off, motivated by the roughly $75\times$
+reduction in Open-Meteo calls compared to one query per site. Flanders
+is small enough that the spatial weather variation on a given day is
+modest relative to the day-to-day variation across the dataset, but
+the choice still introduces error on days with locally concentrated
+weather, for example a thunderstorm over Antwerp that the central
+point does not see.
+
+Outlier flagging is statistical rather than event-based, so genuinely
+unusual but explicable cycling events (festivals, races, exam weeks)
+are treated identically to sensor anomalies.
 
 \paragraph{Future work.}
 Hourly modelling, integration of event calendars, and continuous
@@ -481,6 +508,26 @@ online learning from the monthly AWV updates would all extend the
 model. On the infrastructure side, completing the Vertex AI deployment
 would enable real-time prediction from the dashboard rather than batch
 prediction from a baked-in model.
+
+% =====================================================================
+\section*{Author contributions}
+\addcontentsline{toc}{section}{Author contributions}
+
+\noindent The work was divided as follows.
+
+\begin{itemize}[leftmargin=*, itemsep=0.2em]
+  \item \textbf{Alexander Lievens} ---
+  [TODO: fill in, e.g.\ containerisation, Dockerfile design, Vertex AI groundwork, dashboard \texttt{app.py}].
+  \item \textbf{Fausto de Valck} ---
+  [TODO: fill in, e.g.\ report writing, \dots].
+  \item \textbf{Tobias Vanoverschelde} ---
+  [TODO: fill in].
+  \item \textbf{Timon Knol} ---
+  [TODO: fill in].
+\end{itemize}
+
+\noindent All members reviewed the final report and the code in the
+repository.
 
 % =====================================================================
 \appendix
