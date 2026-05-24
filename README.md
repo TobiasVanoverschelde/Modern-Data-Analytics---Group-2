@@ -37,15 +37,22 @@ The `notebooks/` directory holds the original exploratory work and is
 kept for reference. The `src/pipeline.py` and `src/training.py` modules
 supersede them for reproducible runs.
 
-Docker (recommended, no local Python setup needed):
+Docker:
 
 ```bash
+# Run the pipeline + training once so data/processed/ holds the parquets and best_model.pkl
+python -m src.pipeline
+python -m src.training
+
+# Then build and serve
 docker build -t mda-cycling .
 docker run -p 8000:8000 mda-cycling
 ```
 
-The build stage downloads the raw data, runs the pipeline and trains
-the models, so `docker run` starts the Shiny dashboard immediately.
+The Dockerfile is a two-stage build: stage 1 installs dependencies, stage 2
+serves the Shiny app with the pre-baked artifacts from `data/processed/`. The
+container doesn't retrain on each `docker build`, so iterating on the dashboard
+or the Dockerfile itself is fast.
 
 ## Data
 

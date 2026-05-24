@@ -446,20 +446,27 @@ are logged under the \texttt{cycling-flanders} experiment. The best
 model is promoted to the MLflow model registry, from which the Shiny
 app loads it at startup.
 
-Third, the entire stack is packaged in a multi-stage \textbf{Dockerfile}.
+Third, the entire stack is packaged in a two-stage \textbf{Dockerfile}.
 Stage one builds the Python environment from
 \texttt{requirements-prod.txt} using \texttt{uv} for fast dependency
-resolution. Stage two runs the pipeline and training scripts inside
-the image to materialise the parquet artifacts and the trained model.
-Stage three is a slim runtime image that copies only the processed
-data and the Shiny application, and serves the dashboard on port 8000.
-The clean separation between training-time and serving-time concerns
-means rebuilds for UI changes do not retrain the model.
+resolution. Stage two is a slim runtime image that copies the
+\texttt{data/processed/} directory (the parquet artifacts and the
+trained model, produced by the local training run) along with the
+Shiny application, and serves the dashboard on port 8000. The clean
+separation between training-time and serving-time concerns means
+rebuilds for UI changes do not retrain the model, and the serving
+image stays small.
 
-A Google Cloud Vertex AI deployment of the model is under development;
-the deployment script (\texttt{src/deploy\_vertex.py}) and an endpoint
-test harness are in place, and a target deployment to a Raspberry Pi
-for low-cost continuous hosting is also being explored.
+The same image is deployed to \textbf{Hugging Face Spaces} at
+\url{https://huggingface.co/spaces/Circ04/mda-cycling-flanders},
+demonstrating the cloud-native architecture end-to-end. The trained
+artifacts are shipped to the Space via Git LFS, and the same
+\texttt{Dockerfile} produces both the local image and the hosted one.
+
+A Google Cloud Vertex AI deployment of the model is also under
+development; the deployment script (\texttt{src/deploy\_vertex.py})
+and an endpoint test harness are in place, and a target deployment to
+a Raspberry Pi for low-cost continuous hosting is also being explored.
 
 % =====================================================================
 \section{Conclusion}
