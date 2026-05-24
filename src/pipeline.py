@@ -14,7 +14,7 @@ import pandas as pd
 import requests
 
 from src.loaders import COLUMN_NAMES, load_sites
-from src.cleaning import clean_counts, merge_with_sites
+from src.cleaning import clean_counts, merge_with_sites, flag_outliers
 from src.features import (
     add_calendar_features, add_holidays, add_covid_period, add_cyclical_encoding,
 )
@@ -81,7 +81,9 @@ class CyclingDataPipeline:
                               names=COLUMN_NAMES, low_memory=False)
             hourly.append(clean_counts(raw))
             print(f"  cleaned {f.name}")
-        return merge_with_sites(pd.concat(hourly, ignore_index=True), sites)
+        merged = merge_with_sites(pd.concat(hourly, ignore_index=True), sites)
+        flagged = flag_outliers(merged)
+        return flagged[~flagged["is_outlier"]].drop(columns="is_outlier")
 
     # Calendar, holidays, COVID period, cyclical encoding.
     # Spatial features (lat/lon) already attached during clean().

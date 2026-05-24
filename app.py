@@ -171,7 +171,6 @@ app_ui = ui.page_navbar(
 # Server
 def server(input, output, session):
 
-    # ------------- Tab 1: Temporal Explorer -------------
     @reactive.Calc
     def filtered_hourly():
         years = [int(y) for y in input.years()]
@@ -231,7 +230,6 @@ def server(input, output, session):
         plt.tight_layout()
         return fig
 
-    # ------------- Tab 2: Model Insights -------------
     @reactive.Calc
     def importance_df():
         # Use the saved permutation importance: model-agnostic, less biased
@@ -278,7 +276,6 @@ def server(input, output, session):
         ax.legend(loc="upper left")
         return fig
 
-    # ------------- Tab 3: Weather Impact -------------
     # One row per gemeente — when "All Flanders" we predict for all sites and
     # average; for a specific gemeente this is a single row.
     @reactive.Calc

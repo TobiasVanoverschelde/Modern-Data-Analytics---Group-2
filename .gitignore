@@ -38,9 +38,10 @@ Project_Proposal.docx
 *.docx
 .claude/
 .zed/
-*.aux
-*.toc
-*.out
-*.fls
-*.fdb_latexmk
-*.synctex.gz
+report/*.aux
+report/*.log
+report/*.toc
+report/*.out
+report/*.fls
+report/*.fdb_latexmk
+report/*.synctex.gz

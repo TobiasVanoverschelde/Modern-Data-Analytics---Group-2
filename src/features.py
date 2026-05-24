@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import holidays
 
 def add_cyclical_encoding(df):

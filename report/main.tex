@@ -152,14 +152,15 @@ programmatically using the \texttt{holidays} Python package.
 
 \subsection{Cleaning and aggregation}
 
-The raw counts file contains roughly 10.4 million 15-minute
-observations. We aggregate to hourly resolution per site and direction,
-attach the site metadata, and detect outliers using
-\texttt{IsolationForest} (\texttt{contamination=0.01}), flagging
-approximately 0.98\,\% of observations. For modelling, we further
+After aggregation from the raw 15-minute records to hourly resolution
+per site and direction, the cleaned dataset contains approximately
+$10.4$ million observations. We attach the site metadata and detect
+outliers using \texttt{IsolationForest} (\texttt{contamination=0.01}),
+which flags $1.00\,\%$ of the rows ($103\,704$ in absolute terms).
+These rows are dropped from the analysis. For modelling, we further
 aggregate to a daily level per (date, site, gemeente) tuple, summing
 the cyclist counts and averaging the weather variables. The resulting
-analytical base table contains \textbf{217\,193 daily rows}, covering
+analytical base table contains \textbf{217\,192 daily rows}, covering
 the period August 2019 through April 2026.
 
 % =====================================================================
@@ -255,7 +256,7 @@ eliminating a common source of leakage.
 
 We split the data temporally: training on observations before the 80th
 percentile of dates (cutoff: \textbf{2025-06-28}) and testing on the
-remainder. This yields 173\,628 training rows and 43\,565 test rows.
+remainder. This yields 173\,627 training rows and 43\,565 test rows.
 Inside the training set we use \texttt{GridSearchCV} with
 \texttt{TimeSeriesSplit} (five folds) so that hyperparameter selection
 respects the temporal ordering. Models are selected on the basis of
@@ -321,17 +322,25 @@ on all three metrics.
 \toprule
 Model & Test MAE & RMSE & R\textsuperscript{2} \\
 \midrule
-Ridge                         & 193.3          & 362.0          & 0.77          \\
-Random Forest                 & 223.5          & 333.6          & 0.80          \\
-\textbf{HistGradientBoosting} & \textbf{127.2} & \textbf{249.8} & \textbf{0.89} \\
+Ridge                         & 124.3          & 185.7          & 0.77          \\
+Random Forest                 & 168.9          & 228.9          & 0.65          \\
+\textbf{HistGradientBoosting} & \textbf{94.3} & \textbf{154.2} & \textbf{0.84} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The best HistGradientBoosting configuration uses
-\texttt{learning\_rate = 0.1}, \texttt{max\_iter = 500} and no depth
-cap (\texttt{max\_depth = None}), selected by five-fold
+\texttt{learning\_rate = 0.1}, \texttt{max\_iter = 500} and
+\texttt{max\_depth = 7}, selected by five-fold
 \texttt{TimeSeriesSplit} cross-validation on training MAE.
+
+These numbers reflect training on the dataset \emph{after} the
+IsolationForest outlier filter is applied. Removing those rows
+improves both MAE and RMSE across all three models. The
+$R\textsuperscript{2}$ values are slightly lower than in earlier
+iterations of this pipeline; this is the expected effect of dropping
+the upper tail of the target distribution, which reduces the total
+variance against which the residual variance is compared.
 
 A predicted-vs-actual scatter plot of the test set (see Appendix,
 Figure~A1) shows a tight diagonal cluster for moderate counts
@@ -346,12 +355,13 @@ works, exam periods) drive unmodelled variation.
 The permutation importance ranking (Figure~A2) places the
 \textbf{categorical municipality} far ahead of every other feature:
 \texttt{gemeente} captures persistent local cycling cultures that no
-temporal or weather feature can replicate. The next tier is much
-tighter and contains three features of comparable importance: the
-cyclic day-of-week encoding (\texttt{day\_of\_week\_sin}),
-\textbf{temperature}, and \textbf{latitude}. Longitude follows in
-fifth place, then \textbf{precipitation}. The weekly cycle is the
-strongest temporal driver, and within the weather block temperature
+temporal or weather feature can replicate. The next two slots are
+\textbf{latitude} and \textbf{longitude}, which together describe
+the geographic position of the counting station. A second tier of
+similarly important features follows: \textbf{temperature} and the
+cyclic day-of-week encoding (\texttt{day\_of\_week\_sin}), with
+\textbf{precipitation} just behind. The weekly cycle is the strongest
+purely temporal driver, and within the weather block temperature
 matters more than rain.
 
 The latitude and longitude features absorb part of the variance that
@@ -384,20 +394,18 @@ Section~\ref{sec:eda}.
 The partial dependence plots (Figure~A3) yield direct quantitative
 answers. Over the observed range of roughly $1$--$21$\,\textdegree{}C
 the temperature PDP is approximately linear with an average slope of
-about $+13$ cyclists per day per degree, for a total swing of around
-$+260$ cyclists between the coldest and warmest days in the test set.
-The slope is slightly steeper in the middle of the range than at the
-extremes, where the curve begins to flatten.
+about $+10$ cyclists per day per degree, for a total swing of around
+$+190$ cyclists between the coldest and warmest days in the test set.
 
 Precipitation has the expected negative effect, but the shape is not
 linear. The first few millimetres of rain account for most of the
 drop, after which the PDP plateaus; the total swing across the
-observed range is around $-100$ cyclists per day.
+observed range is around $-80$ cyclists per day.
 
 Wind speed and cloud cover have smaller effects: roughly $-2$ cyclists
-per day per additional metre per second of wind, and about $-1$
-cyclist per day per additional percent of cloud cover. Over the full
-observed range that adds up to about $-35$ and $-100$ cyclists
+per day per additional metre per second of wind, and about $-0.6$
+cyclists per day per additional percent of cloud cover. Over the full
+observed range that adds up to about $-35$ and $-55$ cyclists
 respectively. These magnitudes are consistent with the low permutation
 importances of the two features.
 
