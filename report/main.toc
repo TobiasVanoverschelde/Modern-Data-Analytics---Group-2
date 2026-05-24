@@ -6,7 +6,7 @@
 \contentsline {section}{\numberline {3}Exploratory analysis}{2}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Temporal patterns}{2}{subsection.3.1}%
 \contentsline {subsection}{\numberline {3.2}COVID-19 impact}{2}{subsection.3.2}%
-\contentsline {subsection}{\numberline {3.3}Spatial variation}{3}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.3}Spatial variation}{2}{subsection.3.3}%
 \contentsline {subsection}{\numberline {3.4}Weather correlations}{3}{subsection.3.4}%
 \contentsline {section}{\numberline {4}Methodology}{3}{section.4}%
 \contentsline {subsection}{\numberline {4.1}Feature engineering}{3}{subsection.4.1}%
@@ -16,19 +16,19 @@
 \contentsline {paragraph}{Partial dependence plots (PDP).}{4}{section*.3}%
 \contentsline {section}{\numberline {5}Results}{4}{section.5}%
 \contentsline {subsection}{\numberline {5.1}Model comparison}{4}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}What drives cycling volume? (RQ~1)}{5}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.2}What drives cycling volume? (RQ~1)}{4}{subsection.5.2}%
 \contentsline {subsection}{\numberline {5.3}How do cycling patterns vary across time and space? (RQ~2)}{5}{subsection.5.3}%
 \contentsline {subsection}{\numberline {5.4}How sensitive is cycling to weather? (RQ~3)}{5}{subsection.5.4}%
 \contentsline {section}{\numberline {6}Dashboard}{5}{section.6}%
-\contentsline {paragraph}{Tab 1 --- Temporal explorer.}{5}{section*.4}%
-\contentsline {paragraph}{Tab 2 --- Model insights.}{5}{section*.5}%
-\contentsline {paragraph}{Tab 3 --- Weather impact.}{5}{section*.6}%
+\contentsline {paragraph}{Tab 1: Temporal explorer.}{5}{section*.4}%
+\contentsline {paragraph}{Tab 2: Model insights.}{5}{section*.5}%
+\contentsline {paragraph}{Tab 3: Weather impact.}{5}{section*.6}%
 \contentsline {section}{\numberline {7}Infrastructure and deployment}{6}{section.7}%
 \contentsline {section}{\numberline {8}Conclusion}{6}{section.8}%
 \contentsline {paragraph}{Limitations.}{6}{section*.7}%
 \contentsline {paragraph}{Future work.}{6}{section*.8}%
-\contentsline {section}{\numberline {A}Appendix}{6}{appendix.A}%
-\contentsline {paragraph}{Repository.}{6}{section*.9}%
-\contentsline {paragraph}{Project structure.}{6}{section*.10}%
+\contentsline {section}{\numberline {A}Appendix}{7}{appendix.A}%
+\contentsline {paragraph}{Repository.}{7}{section*.9}%
+\contentsline {paragraph}{Project structure.}{7}{section*.10}%
 \contentsline {paragraph}{Figures.}{7}{section*.11}%
 \contentsline {paragraph}{Reproducing the analysis.}{7}{section*.12}%

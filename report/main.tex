@@ -1,6 +1,6 @@
 \documentclass[11pt,a4paper]{article}
 
-% --- Packages ---
+% Packages
 \usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -36,21 +36,6 @@
 
 \pagenumbering{arabic}
 \setcounter{page}{1}
-
-% --- Notes for the team (remove before submission) ---
-\noindent\textbf{Notes for the team --- remove before submission.}
-\begin{enumerate}[leftmargin=*, itemsep=0.3em]
-  \item \textbf{PDP slopes in Section~5.4} are placeholders
-  (\enquote{Insert the actual slopes printed by
-  \texttt{src/training.py}\ldots}). Fill in the concrete numbers
-  (e.g.\ \enquote{$+1$\,\textdegree{}C $\rightarrow +18$ cyclists/day})
-  after the Docker training run.
-  \item \textbf{Model comparison table in Section~5.1} uses the numbers
-  from before the lat/lon feature was added. Update with the
-  definitive numbers after retraining --- expected to shift only
-  slightly.
-\end{enumerate}
-\bigskip
 
 % =====================================================================
 \section{Introduction}
@@ -92,7 +77,7 @@ proposal:
 The remainder of this report is structured as follows.
 Section~\ref{sec:data} describes the data and our cleaning steps.
 Section~\ref{sec:eda} summarises the exploratory analysis.
-Section~\ref{sec:method} details the methodology --- feature
+Section~\ref{sec:method} details the methodology: feature
 engineering, modelling pipeline, and interpretation techniques.
 Section~\ref{sec:results} presents the results and answers the three
 research questions. Section~\ref{sec:dashboard} introduces the
@@ -170,8 +155,8 @@ the period August 2019 through April 2026.
 \subsection{Temporal patterns}
 
 Hourly profiles reveal a clear distinction between weekdays and
-weekends. Weekdays show two sharp commuting peaks --- one around 08:00
-and one around 17:00 --- consistent with the work and school cycle.
+weekends. Weekdays show two sharp commuting peaks, one around 08:00
+and one around 17:00, consistent with the work and school cycle.
 Weekends, by contrast, show a single, broader afternoon peak,
 reflecting leisure cycling.
 
@@ -193,8 +178,8 @@ sites.
 
 \subsection{Spatial variation}
 
-Counting stations in city centres --- notably Leuven, Gent, and
-Brussels-periphery municipalities --- consistently record the highest
+Counting stations in city centres (notably Leuven, Gent, and
+Brussels-periphery municipalities) consistently record the highest
 daily volumes, while rural sites record substantially lower counts. The
 municipality (\textit{gemeente}) and the precise location of the sensor
 (\texttt{lat}, \texttt{lon}) therefore both carry strong predictive
@@ -224,7 +209,7 @@ reusable functions in the \texttt{src/features.py} module:
 \begin{itemize}[leftmargin=*]
   \item \textbf{Cyclical temporal encodings.} Day-of-week and month are
   encoded as paired $\sin/\cos$ features, ensuring that Sunday and
-  Monday --- or December and January --- are correctly represented as
+  Monday (or December and January) are correctly represented as
   adjacent rather than maximally distant.
   \item \textbf{Calendar flags.} Boolean flags for weekend, morning
   rush (07:00--09:00) and evening rush (16:00--18:00), plus raw
@@ -285,7 +270,7 @@ techniques are used.
 \paragraph{Permutation importance.}
 The classical tree-based \enquote{feature importance} attribute (the
 sum of split gains attributable to a feature) is well known to be
-biased towards features with high cardinality --- in our case, the
+biased towards features with high cardinality, in our case the
 one-hot encoded \texttt{gemeente}, which provides the model with many
 split opportunities. We therefore use
 \texttt{sklearn.inspection.permutation\_importance}, which shuffles
@@ -372,8 +357,8 @@ where the one-hot encoding treats them as fully independent.
 The COVID-period categorical contributes essentially nothing once the
 other features are present, with a permutation importance
 indistinguishable from zero. This does not mean COVID had no effect on
-cycling --- the exploratory analysis shows that it clearly did --- but
-that the within-period variation is already well explained by weather,
+cycling (the exploratory analysis shows that it clearly did), but
+the within-period variation is already well explained by weather,
 calendar and location, so the period label adds no further signal.
 
 \subsection{How do cycling patterns vary across time and space? (RQ~2)}
@@ -416,19 +401,19 @@ importances of the two features.
 To make these findings accessible we built an interactive dashboard in
 Shiny for Python (\texttt{app.py}), organised into three tabs.
 
-\paragraph{Tab 1 --- Temporal explorer.}
+\paragraph{Tab 1: Temporal explorer.}
 The user selects one or more years and a municipality (or
 \enquote{All Flanders}) and is shown the hourly cycling profile, split
 by weekday and weekend, together with day-of-week and monthly
 aggregate views. This tab directly supports Research Question~2.
 
-\paragraph{Tab 2 --- Model insights.}
+\paragraph{Tab 2: Model insights.}
 The user sees the top $N$ feature importances of the trained model
 and a predicted-vs-actual scatter plot on the test set. This tab
 supports Research Question~1 by exposing the same ranking that backs
 Section~\ref{sec:results}.
 
-\paragraph{Tab 3 --- Weather impact.}
+\paragraph{Tab 3: Weather impact.}
 The user sets sliders for temperature, precipitation, wind speed,
 weekday and municipality, and immediately sees the model's predicted
 daily count for the scenario. Three plots accompany the prediction: a
@@ -449,8 +434,8 @@ The project is organised around three reproducibility-oriented design
 decisions.
 
 First, the data preparation, model training, and interpretation steps
-are encapsulated in two executable modules --- \texttt{src/pipeline.py}
-and \texttt{src/training.py} --- that together replace the exploratory
+are encapsulated in two executable modules (\texttt{src/pipeline.py}
+and \texttt{src/training.py}) that together replace the exploratory
 notebooks for reproducible runs. A single
 \texttt{python -m src.pipeline \&\& python -m src.training} invocation
 rebuilds every artifact required by the dashboard.
@@ -491,20 +476,15 @@ variable; and an interactive Shiny dashboard exposes all of this to a
 non-technical audience.
 
 \paragraph{Limitations.}
-Aggregating to daily resolution discards the intraday rush-hour
-structure that is clearly visible in the exploratory data; modelling
-at hourly resolution would recover this but at a substantial compute
-cost.
-
-The weather series is regional rather than per-site. We pull a single
-hourly series for a central Flanders point and join it to every site;
-this is a deliberate trade-off, motivated by the roughly $75\times$
-reduction in Open-Meteo calls compared to one query per site. Flanders
-is small enough that the spatial weather variation on a given day is
-modest relative to the day-to-day variation across the dataset, but
-the choice still introduces error on days with locally concentrated
-weather, for example a thunderstorm over Antwerp that the central
-point does not see.
+The weather series is regional rather than per-site. We pull a
+single hourly series for a central Flanders point and join it to every
+site, which gives a roughly $75\times$ reduction in Open-Meteo calls
+compared to one query per site. Flanders is small enough that the
+spatial weather variation on a given day is modest relative to the
+day-to-day variation across the dataset, but the choice still
+introduces error on days with locally concentrated weather, for
+example a thunderstorm over Antwerp that the central point does not
+see.
 
 Outlier flagging is statistical rather than event-based, so genuinely
 unusual but explicable cycling events (festivals, races, exam weeks)
@@ -516,26 +496,6 @@ online learning from the monthly AWV updates would all extend the
 model. On the infrastructure side, completing the Vertex AI deployment
 would enable real-time prediction from the dashboard rather than batch
 prediction from a baked-in model.
-
-% =====================================================================
-\section*{Author contributions}
-\addcontentsline{toc}{section}{Author contributions}
-
-\noindent The work was divided as follows.
-
-\begin{itemize}[leftmargin=*, itemsep=0.2em]
-  \item \textbf{Alexander Lievens} ---
-  [TODO: fill in, e.g.\ containerisation, Dockerfile design, Vertex AI groundwork, dashboard \texttt{app.py}].
-  \item \textbf{Fausto de Valck} ---
-  [TODO: fill in, e.g.\ report writing, \dots].
-  \item \textbf{Tobias Vanoverschelde} ---
-  [TODO: fill in].
-  \item \textbf{Timon Knol} ---
-  [TODO: fill in].
-\end{itemize}
-
-\noindent All members reviewed the final report and the code in the
-repository.
 
 % =====================================================================
 \appendix
@@ -567,15 +527,15 @@ tests/               pytest smoke tests for features and modelling
 
 \paragraph{Figures.}
 \begin{itemize}[leftmargin=*]
-  \item \textbf{Figure A1} --- Predicted vs actual scatter plot,
+  \item \textbf{Figure A1}: Predicted vs actual scatter plot,
   HistGradientBoosting on test set
   (\texttt{figures/predicted\_vs\_actual.png}).
-  \item \textbf{Figure A2} --- Top permutation feature importances
+  \item \textbf{Figure A2}: Top permutation feature importances
   (\texttt{figures/permutation\_importance.png}).
-  \item \textbf{Figure A3} --- Partial dependence of predicted count
+  \item \textbf{Figure A3}: Partial dependence of predicted count
   on temperature, precipitation, and wind speed
   (\texttt{figures/pdp\_weather.png}).
-  \item \textbf{Figure A4} --- Dashboard screenshots (Temporal
+  \item \textbf{Figure A4}: Dashboard screenshots (Temporal
   explorer, Model insights, Weather impact tabs) in
   \texttt{extra/}.
 \end{itemize}
