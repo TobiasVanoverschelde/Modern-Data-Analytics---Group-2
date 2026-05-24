@@ -13,7 +13,14 @@ PROCESSED_DIR = Path(__file__).parent / "data" / "processed"
 
 df_hourly = pd.read_parquet(PROCESSED_DIR / "cycling_features.parquet")
 df_daily = pd.read_parquet(PROCESSED_DIR / "daily_for_modeling.parquet")
-df_daily = add_cyclical_encoding(df_daily) 
+df_daily = add_cyclical_encoding(df_daily)
+
+# Interpretation artifacts, pre-computed by src/training.py
+pdp_path = PROCESSED_DIR / "pdp_results.parquet"
+pdp_df = pd.read_parquet(pdp_path) if pdp_path.exists() else None
+
+importance_path = PROCESSED_DIR / "feature_importance.parquet"
+importance_df_static = pd.read_parquet(importance_path) if importance_path.exists() else None
 
 # Model — try MLflow first, otherwise fall back to joblib
 try:
@@ -54,9 +61,25 @@ def predict(input_df):
     return model.predict(input_df)
 
 GEMEENTEN = sorted(df_hourly["gemeente"].dropna().unique())
-DEFAULT_GEMEENTE = "Leuven" if "Leuven" in GEMEENTEN else GEMEENTEN[0]
+ALL_FLANDERS = "All Flanders"
+GEMEENTE_CHOICES = [ALL_FLANDERS] + list(GEMEENTEN)
+DEFAULT_GEMEENTE = ALL_FLANDERS
+
+# Average lat/lon per gemeente, used as spatial input for what-if scenarios.
+# Falls back to a Flanders-centre coordinate when a gemeente has no sites with coordinates.
+if {"lat", "lon"}.issubset(df_daily.columns):
+    GEMEENTE_COORDS = (
+        df_daily.dropna(subset=["lat", "lon"])
+                .groupby("gemeente")[["lat", "lon"]]
+                .mean()
+                .to_dict("index")
+    )
+else:
+    GEMEENTE_COORDS = {}
+FLANDERS_CENTRE = {"lat": 51.0, "lon": 4.5}
 
 sns.set_theme(style="whitegrid", context="notebook")
+
 
 # UI
 app_ui = ui.page_navbar(
@@ -66,7 +89,7 @@ app_ui = ui.page_navbar(
         ui.layout_sidebar(
             ui.sidebar(
                 ui.input_select("gemeente", "Municipality",
-                                choices=GEMEENTEN,
+                                choices=GEMEENTE_CHOICES,
                                 selected=DEFAULT_GEMEENTE),
                 ui.input_checkbox_group(
                     "years", "Years",
@@ -116,7 +139,7 @@ app_ui = ui.page_navbar(
                 ui.input_slider("wind", "Wind speed (km/h)",
                                 min=0, max=60, value=10, step=1),
                 ui.input_select("scenario_gemeente", "Municipality",
-                                choices=GEMEENTEN,
+                                choices=GEMEENTE_CHOICES,
                                 selected=DEFAULT_GEMEENTE),
                 ui.input_select(
                     "scenario_day", "Day of week",
@@ -134,6 +157,8 @@ app_ui = ui.page_navbar(
             ui.output_text("scenario_prediction"),
             ui.h3("Effect of temperature, sweeping all values"),
             ui.output_plot("weather_sweep_plot"),
+            ui.h3("Average effect of weather across all sites (partial dependence)"),
+            ui.output_plot("pdp_weather"),
             ui.h3("Observed effect of weather"),
             ui.output_plot("weather_scatter_plot"),
         ),
@@ -152,10 +177,10 @@ def server(input, output, session):
         years = [int(y) for y in input.years()]
         if not years:
             return df_hourly.iloc[0:0]
-        return df_hourly[
-            (df_hourly["gemeente"] == input.gemeente())
-            & (df_hourly["year"].isin(years))
-        ]
+        sub = df_hourly[df_hourly["year"].isin(years)]
+        if input.gemeente() != ALL_FLANDERS:
+            sub = sub[sub["gemeente"] == input.gemeente()]
+        return sub
 
     @output
     @render.plot
@@ -165,16 +190,21 @@ def server(input, output, session):
             fig, ax = plt.subplots()
             ax.text(0.5, 0.5, "No data for selection", ha="center", va="center")
             return fig
+        # Total cyclists per (day, hour) summed across counters in selection,
+        # then averaged across days. More intuitive than mean per counter-day.
         profile = (
-            sub.groupby(["hour", "is_weekend"])["count"]
-               .mean()
+            sub.groupby([sub["timestamp"].dt.date, "hour", "is_weekend"],
+                        as_index=False)["count"].sum()
+               .groupby(["hour", "is_weekend"])["count"].mean()
                .reset_index()
         )
         profile["day_type"] = np.where(profile["is_weekend"], "Weekend", "Weekday")
         fig, ax = plt.subplots(figsize=(10, 4.5))
         sns.lineplot(data=profile, x="hour", y="count", hue="day_type",
                      marker="o", ax=ax, linewidth=2)
-        ax.set_title(f"Hourly profile: {input.gemeente()}")
+        ax.set_title(f"Hourly profile: {input.gemeente()}"
+                     + (" (averaged across all counters)"
+                        if input.gemeente() == ALL_FLANDERS else ""))
         ax.set_xticks(range(0, 24, 2))
         return fig
 
@@ -188,29 +218,29 @@ def server(input, output, session):
             return fig
         fig, axes = plt.subplots(1, 2, figsize=(14, 4))
         day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        dow = sub.groupby("day_of_week")["count"].mean().reset_index()
-        sns.barplot(data=dow, x="day_of_week", y="count", ax=axes[0],
-                    palette="mako")
+        # Daily totals across selection, then mean per day-of-week / month.
+        daily = sub.groupby([sub["timestamp"].dt.date, "day_of_week", "month"],
+                            as_index=False)["count"].sum()
+        dow = daily.groupby("day_of_week")["count"].mean().reset_index()
+        sns.barplot(data=dow, x="day_of_week", y="count", ax=axes[0], palette="mako")
         axes[0].set_xticklabels(day_labels)
-        axes[0].set_title("By day of week")
-        mn = sub.groupby("month")["count"].mean().reset_index()
+        axes[0].set_title("Avg daily total by day of week")
+        mn = daily.groupby("month")["count"].mean().reset_index()
         sns.barplot(data=mn, x="month", y="count", ax=axes[1], palette="viridis")
-        axes[1].set_title("By month")
+        axes[1].set_title("Avg daily total by month")
         plt.tight_layout()
         return fig
 
     # ------------- Tab 2: Model Insights -------------
     @reactive.Calc
     def importance_df():
-        preprocessor = model.named_steps["preprocess"]
-        regressor = model.named_steps["regressor"]
-        feature_names = preprocessor.get_feature_names_out()
-        if hasattr(regressor, "feature_importances_"):
-            values = regressor.feature_importances_
-            return pd.DataFrame({"feature": feature_names, "importance": values})
-        else:
-            return pd.DataFrame({"feature": feature_names,
-                                 "importance": np.abs(regressor.coef_)})
+        # Use the saved permutation importance: model-agnostic, less biased
+        # against one-hot categoricals than the tree built-in importance.
+        if importance_df_static is not None:
+            return importance_df_static
+        # Fallback if the artifact wasn't generated (shouldn't happen in
+        # normal flow — training script saves it).
+        return pd.DataFrame({"feature": [], "importance": []})
 
     @output
     @render.plot
@@ -225,59 +255,80 @@ def server(input, output, session):
     @output
     @render.plot
     def predvactual_plot():
-        # Use the last 20% of daily data as test
+        # Last 20% of dates = held-out test set
         cutoff = df_daily["date"].quantile(0.8)
         test = df_daily[df_daily["date"] >= cutoff]
         from src.modeling import ALL_FEATURES
+        from sklearn.metrics import r2_score
         y_true = test["count"]
         y_pred = model.predict(test[ALL_FEATURES])
+        r2 = r2_score(y_true, y_pred)
 
         fig, ax = plt.subplots(figsize=(7, 7))
-        ax.scatter(y_true, y_pred, alpha=0.3, s=10)
+        ax.scatter(y_true, y_pred, alpha=0.3, s=10,
+                   c=test["is_weekend"].map({True: "crimson", False: "steelblue"}))
         lim = [0, max(y_true.max(), y_pred.max())]
-        ax.plot(lim, lim, "k--", linewidth=1)
+        ax.plot(lim, lim, "k--", linewidth=1, label="Perfect prediction")
         ax.set_xlim(lim); ax.set_ylim(lim)
-        ax.set_xlabel("Actual"); ax.set_ylabel("Predicted")
-        ax.set_title("Predicted vs actual (test set)")
+        ax.set_xlabel("Actual daily cyclists at this counter")
+        ax.set_ylabel("Predicted daily cyclists at this counter")
+        ax.set_title(f"Predicted vs actual on held-out test set (R² = {r2:.2f})\n"
+                     "One point = one (date, counter) pair. Blue = weekday, red = weekend.",
+                     fontsize=11)
+        ax.legend(loc="upper left")
         return fig
 
     # ------------- Tab 3: Weather Impact -------------
+    # One row per gemeente — when "All Flanders" we predict for all sites and
+    # average; for a specific gemeente this is a single row.
     @reactive.Calc
     def scenario_input():
         day = int(input.scenario_day())
-        month = 6                        # neutral default
-        return pd.DataFrame([{
-            "temperature_2m": input.temp(),
-            "precipitation": input.precip(),
-            "wind_speed_10m": input.wind(),
-            "cloud_cover": 50.0,         # neutral default
-            "day_of_week_sin": np.sin(2 * np.pi * day / 7),
-            "day_of_week_cos": np.cos(2 * np.pi * day / 7),
-            "month_sin": np.sin(2 * np.pi * month / 12),
-            "month_cos": np.cos(2 * np.pi * month / 12),
-            "gemeente": input.scenario_gemeente(),
-            "covid_period": "post_covid",
-            "is_weekend": day >= 5,
-            "is_holiday": False,
-        }])
+        month = 6
+        gemeenten = (list(GEMEENTEN) if input.scenario_gemeente() == ALL_FLANDERS
+                     else [input.scenario_gemeente()])
+        rows = []
+        for g in gemeenten:
+            coords = GEMEENTE_COORDS.get(g, FLANDERS_CENTRE)
+            rows.append({
+                "temperature_2m": input.temp(),
+                "precipitation": input.precip(),
+                "wind_speed_10m": input.wind(),
+                "cloud_cover": 50.0,
+                "lat": coords["lat"],
+                "lon": coords["lon"],
+                "day_of_week_sin": np.sin(2 * np.pi * day / 7),
+                "day_of_week_cos": np.cos(2 * np.pi * day / 7),
+                "month_sin": np.sin(2 * np.pi * month / 12),
+                "month_cos": np.cos(2 * np.pi * month / 12),
+                "gemeente": g,
+                "covid_period": "post_covid",
+                "is_weekend": day >= 5,
+                "is_holiday": False,
+            })
+        return pd.DataFrame(rows)
 
     @output
     @render.text
     def scenario_prediction():
-        pred = predict(scenario_input())[0]
-        return f"Predicted daily cycling count: {pred:,.0f}"
+        preds = predict(scenario_input())
+        avg = float(np.mean(preds))
+        if input.scenario_gemeente() == ALL_FLANDERS:
+            return f"Avg predicted daily cycling count across {len(preds)} counters: {avg:,.0f}"
+        return f"Predicted daily cycling count: {avg:,.0f}"
 
     @output
     @render.plot
     def weather_sweep_plot():
-        # Sweep temperature, hold other inputs constant
-        base = scenario_input().iloc[0]
+        # Sweep temperature; for each value predict over all rows in scenario_input
+        # (one row per gemeente when "All Flanders") and average.
+        base = scenario_input()
         temps = np.linspace(-5, 35, 41)
-        rows = [base.copy() for _ in temps]
-        for r, t in zip(rows, temps):
-            r["temperature_2m"] = t
-        sweep_df = pd.DataFrame(rows)
-        preds = predict(sweep_df)
+        preds = []
+        for t in temps:
+            sweep = base.copy()
+            sweep["temperature_2m"] = t
+            preds.append(float(np.mean(predict(sweep))))
 
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(temps, preds, linewidth=2, color="steelblue")
@@ -285,15 +336,45 @@ def server(input, output, session):
                    label=f"Current: {input.temp()}°C")
         ax.set_xlabel("Temperature (°C)")
         ax.set_ylabel("Predicted daily count")
-        ax.set_title("Predicted count as a function of temperature")
+        suffix = " (avg across all counters)" if input.scenario_gemeente() == ALL_FLANDERS else ""
+        ax.set_title(f"Predicted count vs temperature{suffix}")
         ax.legend()
         return fig
 
     @output
     @render.plot
+    def pdp_weather():
+        features = [
+            ("temperature_2m", "Temperature (°C)"),
+            ("precipitation", "Precipitation (mm/day)"),
+            ("wind_speed_10m", "Wind speed (km/h)"),
+        ]
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        if pdp_df is None:
+            for ax in axes:
+                ax.text(0.5, 0.5, "Run training to generate pdp_results.parquet",
+                        ha="center", va="center", transform=ax.transAxes)
+                ax.axis("off")
+            return fig
+        for ax, (feat, xlabel) in zip(axes, features):
+            sub = pdp_df[pdp_df["feature"] == feat]
+            baseline = sub["prediction"].mean()
+            pct = (sub["prediction"] - baseline) / baseline * 100
+            ax.plot(sub["grid_value"], pct, color="steelblue", linewidth=2)
+            ax.axhline(0, color="grey", linestyle=":", linewidth=1)
+            ax.set_xlabel(xlabel)
+            ax.set_title(feat)
+        axes[0].set_ylabel("% change from mean predicted count")
+        plt.tight_layout()
+        return fig
+
+    @output
+    @render.plot
     def weather_scatter_plot():
-        # Observed temp vs count in the daily data
-        sub = df_daily[df_daily["gemeente"] == input.scenario_gemeente()]
+        if input.scenario_gemeente() == ALL_FLANDERS:
+            sub = df_daily
+        else:
+            sub = df_daily[df_daily["gemeente"] == input.scenario_gemeente()]
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.scatter(sub["temperature_2m"], sub["count"], alpha=0.4, s=8)
         ax.set_xlabel("Daily average temperature (°C)")

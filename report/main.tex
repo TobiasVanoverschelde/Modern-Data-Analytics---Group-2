@@ -1,0 +1,588 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Packages ---
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{textcomp}
+\usepackage{csquotes}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue!60!black,
+    citecolor=blue!60!black,
+}
+
+\begin{document}
+
+% =====================================================================
+% Title page (from titlepage.tex)
+% =====================================================================
+\input{titlepage}
+
+% =====================================================================
+% Table of contents
+% =====================================================================
+\tableofcontents
+\newpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% --- Notes for the team (remove before submission) ---
+\noindent\textbf{Notes for the team --- remove before submission.}
+\begin{enumerate}[leftmargin=*, itemsep=0.3em]
+  \item \textbf{PDP slopes in Section~5.4} are placeholders
+  (\enquote{Insert the actual slopes printed by
+  \texttt{src/training.py}\ldots}). Fill in the concrete numbers
+  (e.g.\ \enquote{$+1$\,\textdegree{}C $\rightarrow +18$ cyclists/day})
+  after the Docker training run.
+  \item \textbf{Model comparison table in Section~5.1} uses the numbers
+  from before the lat/lon feature was added. Update with the
+  definitive numbers after retraining --- expected to shift only
+  slightly.
+\end{enumerate}
+\bigskip
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Cycling is a cornerstone of sustainable mobility in Flanders. To plan and
+maintain its cycling infrastructure, the \textit{Agentschap Wegen en
+Verkeer} (AWV) operates a network of automatic counting stations across
+the region. These stations record cyclist volumes at 15-minute
+intervals, producing a rich publicly available dataset that opens the
+door to a quantitative understanding of cycling behaviour.
+
+This project moves beyond a descriptive view of \emph{when} and
+\emph{where} people cycle, and asks what \emph{drives} cycling volume.
+We combine the AWV bicycle counts with daily weather observations from
+the Open-Meteo API, Belgian public holidays, and calendar features, and
+we fit a tree-based regression model whose feature importances and
+partial dependences serve as the analytical backbone of our
+explanations. Results are presented through an interactive Shiny for
+Python dashboard so that stakeholders can explore the patterns
+themselves.
+
+We formulate three research questions, taken directly from the project
+proposal:
+
+\begin{enumerate}[label=\textbf{RQ\arabic*.}, leftmargin=*]
+  \item \textbf{What drives cycling volume in Flanders?} We quantify the
+  relative contribution of weather, temporal and location features to
+  daily cycling counts.
+  \item \textbf{How do cycling patterns vary across time and space?} We
+  identify peak hours, weekly and seasonal trends, and spatial variation
+  across municipalities and counting sites.
+  \item \textbf{How sensitive is cycling to weather conditions?} We
+  estimate how much a one-degree change in temperature, or a
+  one-millimetre change in precipitation, affects the predicted daily
+  count.
+\end{enumerate}
+
+The remainder of this report is structured as follows.
+Section~\ref{sec:data} describes the data and our cleaning steps.
+Section~\ref{sec:eda} summarises the exploratory analysis.
+Section~\ref{sec:method} details the methodology --- feature
+engineering, modelling pipeline, and interpretation techniques.
+Section~\ref{sec:results} presents the results and answers the three
+research questions. Section~\ref{sec:dashboard} introduces the
+dashboard, Section~\ref{sec:infra} covers the infrastructure and
+deployment choices, and Section~\ref{sec:conclusion} concludes with
+limitations and directions for future work.
+
+% =====================================================================
+\section{Data}
+\label{sec:data}
+
+\subsection{AWV bicycle counts}
+
+The primary data source consists of automatic bicycle counts collected
+by EcoCounter sensors across Flanders, publicly available through the
+Flemish open data portal. The data are published in three linked CSV
+files:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Counts} (\texttt{data-YYYY-MM.csv}): one monthly file
+  per month from August 2019 to April 2026, with 15-minute interval
+  observations recording the number of cyclists, pedestrians, or other
+  road users detected at each station. Each row contains the site
+  identifier, direction (\textsc{in}, \textsc{out}, or
+  \textsc{in/out}), road user type, start and end timestamps, and count
+  value.
+  \item \textbf{Sites} (\texttt{sites.csv}): metadata for each counting
+  station, including its WGS84 latitude and longitude, name,
+  municipality (\textit{gemeente}), road number, district, and
+  installation date.
+  \item \textbf{Directions} (\texttt{richtingen.csv}): metadata
+  describing the directions recorded at each station.
+\end{itemize}
+
+For this project, we filter strictly to cyclist counts
+(\texttt{type = FIETSERS}), discarding pedestrian, automobile and other
+categories.
+
+\subsection{External enrichment}
+
+Cycling is highly sensitive to weather, so we enrich the dataset with
+daily weather observations from the Open-Meteo
+historical weather API\footnote{\url{https://open-meteo.com}} for the
+full date range of the cycling data. The variables retained are
+temperature at 2\,m above ground, precipitation, wind speed at 10\,m,
+and cloud cover. Because querying weather per individual site would
+inflate the API load by approximately 75$\times$, we use a single
+representative weather series for Flanders; the spatial variation in
+weather across the region is small relative to the variation in cycling
+counts.
+
+We further engineer two categorical context variables:
+\textbf{COVID periods}, defined manually as five non-overlapping
+intervals (pre-COVID, first lockdown, summer 2020, second lockdown,
+post-COVID), and \textbf{Belgian public holidays}, derived
+programmatically using the \texttt{holidays} Python package.
+
+\subsection{Cleaning and aggregation}
+
+The raw counts file contains roughly 10.4 million 15-minute
+observations. We aggregate to hourly resolution per site and direction,
+attach the site metadata, and detect outliers using
+\texttt{IsolationForest} (\texttt{contamination=0.01}), flagging
+approximately 0.98\,\% of observations. For modelling, we further
+aggregate to a daily level per (date, site, gemeente) tuple, summing
+the cyclist counts and averaging the weather variables. The resulting
+analytical base table contains \textbf{217\,193 daily rows}, covering
+the period August 2019 through April 2026.
+
+% =====================================================================
+\section{Exploratory analysis}
+\label{sec:eda}
+
+\subsection{Temporal patterns}
+
+Hourly profiles reveal a clear distinction between weekdays and
+weekends. Weekdays show two sharp commuting peaks --- one around 08:00
+and one around 17:00 --- consistent with the work and school cycle.
+Weekends, by contrast, show a single, broader afternoon peak,
+reflecting leisure cycling.
+
+At the weekly scale, counts on Tuesdays through Thursdays are typically
+the highest, with Mondays and Fridays slightly lower, and weekends
+substantially lower at most counting stations. At the seasonal scale,
+cycling volume follows a clear sinusoidal pattern with a peak in late
+spring and summer and a trough in winter.
+
+\subsection{COVID-19 impact}
+
+The five COVID periods leave a visible imprint on the data. The first
+lockdown (mid-March to early May 2020) suppressed counts at
+commuter-heavy sites while increasing them at leisure-oriented
+locations. The summer of 2020 saw a rebound, after which the second
+lockdown depressed counts again. The post-COVID period sees a recovery
+in commuter cycling, though not always to pre-pandemic levels at all
+sites.
+
+\subsection{Spatial variation}
+
+Counting stations in city centres --- notably Leuven, Gent, and
+Brussels-periphery municipalities --- consistently record the highest
+daily volumes, while rural sites record substantially lower counts. The
+municipality (\textit{gemeente}) and the precise location of the sensor
+(\texttt{lat}, \texttt{lon}) therefore both carry strong predictive
+information.
+
+\subsection{Weather correlations}
+
+Temperature correlates positively with cycling counts: warmer days
+bring more cyclists. Precipitation has a strong negative effect, with
+even moderate rainfall (5--10\,mm) measurably reducing counts. Wind
+speed and cloud cover have smaller but consistent negative
+associations.
+
+These exploratory observations motivate the feature set used in the
+modelling stage and provide initial intuition against which the
+model's feature importances and partial dependences can be compared.
+
+% =====================================================================
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Feature engineering}
+
+The model receives the following feature groups, all engineered through
+reusable functions in the \texttt{src/features.py} module:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Cyclical temporal encodings.} Day-of-week and month are
+  encoded as paired $\sin/\cos$ features, ensuring that Sunday and
+  Monday --- or December and January --- are correctly represented as
+  adjacent rather than maximally distant.
+  \item \textbf{Calendar flags.} Boolean flags for weekend, morning
+  rush (07:00--09:00) and evening rush (16:00--18:00), plus raw
+  \texttt{hour}, \texttt{day\_of\_week}, \texttt{month}, and
+  \texttt{year} integers.
+  \item \textbf{COVID period.} A five-level categorical encoding of
+  the pandemic timeline.
+  \item \textbf{Belgian holiday flag.} A boolean indicating whether
+  the date is a recognised public holiday.
+  \item \textbf{Spatial features.} The WGS84 latitude and longitude of
+  each counting site, joined from \texttt{sites.csv}. These allow the
+  model to learn geographic proximity directly, complementing the
+  one-hot encoded municipality.
+  \item \textbf{Weather features.} Daily temperature, precipitation,
+  wind speed, and cloud cover from Open-Meteo.
+\end{itemize}
+
+\subsection{Modelling pipeline}
+
+We use a scikit-learn \texttt{Pipeline} composed of two stages. The
+first is a \texttt{ColumnTransformer} that applies
+\texttt{StandardScaler} to the numeric and cyclical features,
+\texttt{OneHotEncoder(handle\_unknown="ignore")} to the categorical
+features (\texttt{gemeente}, \texttt{covid\_period}), and passthrough
+for boolean features. The second stage is a regression estimator. By
+wrapping everything in a single pipeline, we ensure that the same
+preprocessing is applied identically at training and prediction time,
+eliminating a common source of leakage.
+
+We split the data temporally: training on observations before the 80th
+percentile of dates (cutoff: \textbf{2025-06-28}) and testing on the
+remainder. This yields 173\,628 training rows and 43\,565 test rows.
+Inside the training set we use \texttt{GridSearchCV} with
+\texttt{TimeSeriesSplit} (five folds) so that hyperparameter selection
+respects the temporal ordering. Models are selected on the basis of
+mean absolute error (MAE) on the cross-validation folds.
+
+We compare three regression families:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Ridge regression}, as a linear baseline.
+  \item \textbf{Random Forest}, as a non-linear baseline.
+  \item \textbf{HistGradientBoosting}, a fast histogram-based variant
+  of gradient-boosted trees that handles missing values natively and
+  scales well on tabular data of this size.
+\end{itemize}
+
+All stochastic estimators are seeded with \texttt{random\_state = 42}
+so a re-run reproduces the same model selection and the same test
+metrics.
+
+\subsection{Interpretation techniques}
+
+In line with the proposal, the model's role is \emph{explanatory}
+rather than purely predictive. Two complementary interpretation
+techniques are used.
+
+\paragraph{Permutation importance.}
+The classical tree-based \enquote{feature importance} attribute (the
+sum of split gains attributable to a feature) is well known to be
+biased towards features with high cardinality --- in our case, the
+one-hot encoded \texttt{gemeente}, which provides the model with many
+split opportunities. We therefore use
+\texttt{sklearn.inspection.permutation\_importance}, which shuffles
+each feature in turn on a held-out sample and measures the drop in
+R\textsuperscript{2}. The resulting ranking is unbiased with respect
+to cardinality and is comparable across feature types.
+
+\paragraph{Partial dependence plots (PDP).}
+To answer Research Question~3, we compute partial dependences for
+\texttt{temperature\_2m}, \texttt{precipitation}, and
+\texttt{wind\_speed\_10m} using
+\texttt{sklearn.inspection.partial\_dependence}. A PDP varies one
+feature across its observed range while averaging over the empirical
+distribution of the others, giving the marginal effect of that feature
+on the prediction. The slope of the temperature PDP, for example,
+directly answers the proposal question \enquote{how much does a degree
+of temperature change affect cycling counts}.
+
+% =====================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Model comparison}
+
+Table~\ref{tab:results} summarises the held-out test performance of
+the four candidate models. HistGradientBoosting outperforms the others
+on all three metrics.
+
+\begin{table}[ht]
+\centering
+\caption{Test-set performance of the three models.}
+\label{tab:results}
+\begin{tabular}{lrrr}
+\toprule
+Model & Test MAE & RMSE & R\textsuperscript{2} \\
+\midrule
+Ridge                         & 193.3          & 362.0          & 0.77          \\
+Random Forest                 & 223.5          & 333.6          & 0.80          \\
+\textbf{HistGradientBoosting} & \textbf{127.2} & \textbf{249.8} & \textbf{0.89} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The best HistGradientBoosting configuration uses
+\texttt{learning\_rate = 0.1}, \texttt{max\_iter = 500} and no depth
+cap (\texttt{max\_depth = None}), selected by five-fold
+\texttt{TimeSeriesSplit} cross-validation on training MAE.
+
+A predicted-vs-actual scatter plot of the test set (see Appendix,
+Figure~A1) shows a tight diagonal cluster for moderate counts
+($\leq 1000$ cyclists per day) and increased scatter at higher counts,
+consistent with the model under-predicting the most extreme summer
+peaks. R\textsuperscript{2}~$=0.89$ is high for a noisy domain like
+cycling, where idiosyncratic events (cycling festivals, infrastructure
+works, exam periods) drive unmodelled variation.
+
+\subsection{What drives cycling volume? (RQ~1)}
+
+The permutation importance ranking (Figure~A2) places the
+\textbf{categorical municipality} far ahead of every other feature:
+\texttt{gemeente} captures persistent local cycling cultures that no
+temporal or weather feature can replicate. The next tier is much
+tighter and contains three features of comparable importance: the
+cyclic day-of-week encoding (\texttt{day\_of\_week\_sin}),
+\textbf{temperature}, and \textbf{latitude}. Longitude follows in
+fifth place, then \textbf{precipitation}. The weekly cycle is the
+strongest temporal driver, and within the weather block temperature
+matters more than rain.
+
+The latitude and longitude features absorb part of the variance that
+would otherwise be carried by the one-hot \texttt{gemeente} columns;
+two nearby municipalities are recognised as similar by the model,
+where the one-hot encoding treats them as fully independent.
+
+The COVID-period categorical contributes essentially nothing once the
+other features are present, with a permutation importance
+indistinguishable from zero. This does not mean COVID had no effect on
+cycling --- the exploratory analysis shows that it clearly did --- but
+that the within-period variation is already well explained by weather,
+calendar and location, so the period label adds no further signal.
+
+\subsection{How do cycling patterns vary across time and space? (RQ~2)}
+
+Spatially, the model assigns substantially higher predicted counts to
+city-centre stations in Leuven, Gent and Brussels-adjacent
+municipalities than to rural ones. The addition of \texttt{lat}/%
+\texttt{lon} allows the model to interpolate to areas with few
+observations, capturing the gradient from urban to rural rather than
+treating each gemeente as an isolated category. Temporally, the
+day-of-week and month cyclic encodings, combined with the weekend and
+holiday flags, reproduce the two-peak weekday pattern, the broader
+weekend pattern, and the strong seasonal cycle observed in
+Section~\ref{sec:eda}.
+
+\subsection{How sensitive is cycling to weather? (RQ~3)}
+
+The partial dependence plots (Figure~A3) yield direct quantitative
+answers. Over the observed range of roughly $1$--$21$\,\textdegree{}C
+the temperature PDP is approximately linear with an average slope of
+about $+13$ cyclists per day per degree, for a total swing of around
+$+260$ cyclists between the coldest and warmest days in the test set.
+The slope is slightly steeper in the middle of the range than at the
+extremes, where the curve begins to flatten.
+
+Precipitation has the expected negative effect, but the shape is not
+linear. The first few millimetres of rain account for most of the
+drop, after which the PDP plateaus; the total swing across the
+observed range is around $-100$ cyclists per day.
+
+Wind speed and cloud cover have smaller effects: roughly $-2$ cyclists
+per day per additional metre per second of wind, and about $-1$
+cyclist per day per additional percent of cloud cover. Over the full
+observed range that adds up to about $-35$ and $-100$ cyclists
+respectively. These magnitudes are consistent with the low permutation
+importances of the two features.
+
+% =====================================================================
+\section{Dashboard}
+\label{sec:dashboard}
+
+To make these findings accessible we built an interactive dashboard in
+Shiny for Python (\texttt{app.py}), organised into three tabs.
+
+\paragraph{Tab 1 --- Temporal explorer.}
+The user selects one or more years and a municipality (or
+\enquote{All Flanders}) and is shown the hourly cycling profile, split
+by weekday and weekend, together with day-of-week and monthly
+aggregate views. This tab directly supports Research Question~2.
+
+\paragraph{Tab 2 --- Model insights.}
+The user sees the top $N$ feature importances of the trained model
+and a predicted-vs-actual scatter plot on the test set. This tab
+supports Research Question~1 by exposing the same ranking that backs
+Section~\ref{sec:results}.
+
+\paragraph{Tab 3 --- Weather impact.}
+The user sets sliders for temperature, precipitation, wind speed,
+weekday and municipality, and immediately sees the model's predicted
+daily count for the scenario. Three plots accompany the prediction: a
+temperature sweep holding the other inputs fixed, the population-level
+partial-dependence curve, and an observed-data scatter for the chosen
+municipality. This tab supports Research Question~3.
+
+The dashboard reads the pre-computed \texttt{feature\_importance.parquet}
+and \texttt{pdp\_results.parquet} artifacts produced by
+\texttt{src/training.py}, rather than recomputing them on each request,
+keeping the user interface responsive.
+
+% =====================================================================
+\section{Infrastructure and deployment}
+\label{sec:infra}
+
+The project is organised around three reproducibility-oriented design
+decisions.
+
+First, the data preparation, model training, and interpretation steps
+are encapsulated in two executable modules --- \texttt{src/pipeline.py}
+and \texttt{src/training.py} --- that together replace the exploratory
+notebooks for reproducible runs. A single
+\texttt{python -m src.pipeline \&\& python -m src.training} invocation
+rebuilds every artifact required by the dashboard.
+
+Second, all model runs are tracked with \textbf{MLflow}: parameters,
+cross-validation MAE, test metrics, and the serialised model itself
+are logged under the \texttt{cycling-flanders} experiment. The best
+model is promoted to the MLflow model registry, from which the Shiny
+app loads it at startup.
+
+Third, the entire stack is packaged in a multi-stage \textbf{Dockerfile}.
+Stage one builds the Python environment from
+\texttt{requirements-prod.txt} using \texttt{uv} for fast dependency
+resolution. Stage two runs the pipeline and training scripts inside
+the image to materialise the parquet artifacts and the trained model.
+Stage three is a slim runtime image that copies only the processed
+data and the Shiny application, and serves the dashboard on port 8000.
+The clean separation between training-time and serving-time concerns
+means rebuilds for UI changes do not retrain the model.
+
+A Google Cloud Vertex AI deployment of the model is under development;
+the deployment script (\texttt{src/deploy\_vertex.py}) and an endpoint
+test harness are in place, and a target deployment to a Raspberry Pi
+for low-cost continuous hosting is also being explored.
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have built an end-to-end analytical pipeline for cycling in
+Flanders. A HistGradientBoosting regressor trained on six years of
+AWV counts, enriched with weather, calendar, COVID-period and spatial
+features, reaches R\textsuperscript{2}~$=0.89$ on a held-out temporal
+test set. Permutation importance identifies municipality, temperature,
+weekend status and precipitation as the dominant drivers; partial
+dependence plots quantify the marginal effect of each weather
+variable; and an interactive Shiny dashboard exposes all of this to a
+non-technical audience.
+
+\paragraph{Limitations.}
+Aggregating to daily resolution discards the intraday rush-hour
+structure that is clearly visible in the exploratory data; modelling
+at hourly resolution would recover this but at a substantial compute
+cost.
+
+The weather series is regional rather than per-site. We pull a single
+hourly series for a central Flanders point and join it to every site;
+this is a deliberate trade-off, motivated by the roughly $75\times$
+reduction in Open-Meteo calls compared to one query per site. Flanders
+is small enough that the spatial weather variation on a given day is
+modest relative to the day-to-day variation across the dataset, but
+the choice still introduces error on days with locally concentrated
+weather, for example a thunderstorm over Antwerp that the central
+point does not see.
+
+Outlier flagging is statistical rather than event-based, so genuinely
+unusual but explicable cycling events (festivals, races, exam weeks)
+are treated identically to sensor anomalies.
+
+\paragraph{Future work.}
+Hourly modelling, integration of event calendars, and continuous
+online learning from the monthly AWV updates would all extend the
+model. On the infrastructure side, completing the Vertex AI deployment
+would enable real-time prediction from the dashboard rather than batch
+prediction from a baked-in model.
+
+% =====================================================================
+\section*{Author contributions}
+\addcontentsline{toc}{section}{Author contributions}
+
+\noindent The work was divided as follows.
+
+\begin{itemize}[leftmargin=*, itemsep=0.2em]
+  \item \textbf{Alexander Lievens} ---
+  [TODO: fill in, e.g.\ containerisation, Dockerfile design, Vertex AI groundwork, dashboard \texttt{app.py}].
+  \item \textbf{Fausto de Valck} ---
+  [TODO: fill in, e.g.\ report writing, \dots].
+  \item \textbf{Tobias Vanoverschelde} ---
+  [TODO: fill in].
+  \item \textbf{Timon Knol} ---
+  [TODO: fill in].
+\end{itemize}
+
+\noindent All members reviewed the final report and the code in the
+repository.
+
+% =====================================================================
+\appendix
+\section{Appendix}
+\label{sec:appendix}
+
+\paragraph{Repository.} All code is available at\\
+\url{https://github.com/TobiasVanoverschelde/Modern-Data-Analytics---Group-2}.
+
+\paragraph{Project structure.}
+
+\begin{verbatim}
+src/
+  loaders.py         CSV readers for counts, sites, directions
+  cleaning.py        filter to cyclists, hourly aggregation, outliers
+  weather.py         Open-Meteo API integration
+  features.py        cyclical encoding, COVID, holidays, lat/lon
+  modeling.py        ColumnTransformer + pipeline + temporal CV
+  interpretation.py  permutation importance + partial dependence
+  tracking.py        MLflow setup
+  pipeline.py        end-to-end data pipeline (replaces nb 01/02)
+  training.py        end-to-end training + interpretation (replaces nb 03)
+  deploy_vertex.py   Google Cloud Vertex AI deployment
+notebooks/           original exploratory notebooks (kept for reference)
+app.py               Shiny for Python dashboard
+Dockerfile           multi-stage build (deps -> training -> serving)
+tests/               pytest smoke tests for features and modelling
+\end{verbatim}
+
+\paragraph{Figures.}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Figure A1} --- Predicted vs actual scatter plot,
+  HistGradientBoosting on test set
+  (\texttt{figures/predicted\_vs\_actual.png}).
+  \item \textbf{Figure A2} --- Top permutation feature importances
+  (\texttt{figures/permutation\_importance.png}).
+  \item \textbf{Figure A3} --- Partial dependence of predicted count
+  on temperature, precipitation, and wind speed
+  (\texttt{figures/pdp\_weather.png}).
+  \item \textbf{Figure A4} --- Dashboard screenshots (Temporal
+  explorer, Model insights, Weather impact tabs) in
+  \texttt{extra/}.
+\end{itemize}
+
+\paragraph{Reproducing the analysis.}
+From a clone of the repository:
+
+\begin{verbatim}
+docker build -t mda-cycling .
+docker run --rm -p 8000:8000 mda-cycling
+\end{verbatim}
+
+\noindent Then open \url{http://localhost:8000} in a browser. The
+build stage downloads the raw data, runs \texttt{src/pipeline.py} and
+\texttt{src/training.py}, and bakes the resulting model and parquet
+artifacts into the serving image.
+
+\end{document}

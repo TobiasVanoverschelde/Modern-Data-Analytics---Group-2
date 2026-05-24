@@ -33,3 +33,14 @@ credentials.json
 service-account*.json
 .aws/
 .gcloud/
+context/
+Project_Proposal.docx
+*.docx
+.claude/
+.zed/
+*.aux
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
