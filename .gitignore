@@ -36,3 +36,4 @@ service-account*.json
 context/
 Project_Proposal.docx
 *.docx
+.claude/
