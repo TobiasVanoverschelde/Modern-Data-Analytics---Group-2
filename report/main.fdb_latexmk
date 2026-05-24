@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1779656074.34138 "main.tex" "main.pdf" "main" 1779656074.77497 0
+["pdflatex"] 1779659264.00488 "main.tex" "main.pdf" "main" 1779659264.49619 0
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc" 1254269338 2375 baa924870cfb487815765f9094cf3728 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc" 1202520719 2405 5dcf2c1b967ee25cc46c58cd52244aed ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc" 1202520719 2840 216e6e45ad352e2456e1149f28885bee ""
@@ -116,10 +116,10 @@
   "/usr/local/texlive/2026/texmf-var/web2c/pdftex/pdflatex.fmt" 1775133790 3636771 a6800745d4df3bf6edb3b884339d025b ""
   "/usr/local/texlive/2026/texmf.cnf" 1774209515 577 648cd9f92f9c0eac486f4c71c85cfbbe ""
   "figure(s)/logoFirW.jpg" 1779635838.04451 22348 c38fb4aba4c26505d312894da8b930c2 ""
-  "main.aux" 1779656074.72359 4887 3dc789367f04937bd28f6377c05e283d "pdflatex"
-  "main.out" 1779656074.72409 3597 6b77238071b44b7bc4088042cb1f5060 "pdflatex"
-  "main.tex" 1779655965.21813 25578 93b9cfaf290e151000585af4edbb1847 ""
-  "main.toc" 1779656074.72423 2578 fa52bfdc1db82f411d9c6e6f259c47de "pdflatex"
+  "main.aux" 1779659264.43436 4887 3dc789367f04937bd28f6377c05e283d "pdflatex"
+  "main.out" 1779659264.43488 3597 6b77238071b44b7bc4088042cb1f5060 "pdflatex"
+  "main.tex" 1779659017.68502 25266 dfb3e8f9a94f4551af2c476b8160e494 ""
+  "main.toc" 1779659264.43503 2578 fa52bfdc1db82f411d9c6e6f259c47de "pdflatex"
   "titlepage.tex" 1779635838.04713 895 fd9b40b24b0142d7c59891dc58ac97ab ""
   (generated)
   "main.aux"
